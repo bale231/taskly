@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createTodo,
   deleteTodo,
@@ -35,7 +36,6 @@ import {
 import { getListShares } from "../api/sharing";
 import DraggableTodoRow from "../components/DraggableTodoRow";
 import MoveTodoModal from "../components/MoveTodoModal";
-import Navbar from "../components/Navbar";
 import SwipeableRow from "../components/SwipeableRow";
 import type { RootStackParamList } from "../navigation/types";
 import type { Todo, TodoSortOption } from "../types/todo";
@@ -78,6 +78,7 @@ function sortTodos(todos: Todo[], sortBy: TodoSortOption): Todo[] {
 
 export default function ListDetailScreen({ route, navigation }: Props) {
   const { listId } = route.params;
+  const insets = useSafeAreaInsets();
 
   const [todos, setTodos] = useState<Todo[]>([]);
   const [listName, setListName] = useState("");
@@ -248,8 +249,13 @@ export default function ListDetailScreen({ route, navigation }: Props) {
 
   return (
     <View className={`flex-1 ${HEADER_BG[listColor] ?? HEADER_BG.blue}`}>
-      <Navbar />
-      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 140 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 24,
+          paddingTop: 24 + insets.top,
+          paddingBottom: 140,
+        }}
+      >
         <View className="mb-4 flex-row items-center justify-between">
           <View className="flex-1">
             <Text className="text-3xl font-bold text-gray-900 dark:text-white">{listName}</Text>
@@ -386,7 +392,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
                     )}
 
                     <Pressable onPress={() => handleToggle(todo.id)} className="mr-3">
-                      <CheckSquare size={20} color={todo.completed ? "#16A34A" : "#9CA3AF"} />
+                      <CheckSquare size={20} color={todo.completed ? "#9CA3AF" : "#16A34A"} />
                     </Pressable>
 
                     <View className="flex-1">

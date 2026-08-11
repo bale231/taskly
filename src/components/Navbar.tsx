@@ -2,13 +2,14 @@ import { useNavigation } from "@react-navigation/native";
 import { Moon, Sun, User } from "lucide-react-native";
 import { Image, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import NotificationBadge from "./NotificationBadge";
 import { useTheme } from "../context/ThemeContext";
 
 /**
  * Port parziale di src/components/Navbar.tsx della webapp: logo, toggle
- * tema e pallino profilo. Il pulsante di sync manuale (offline queue) e il
- * badge notifiche non sono ancora stati portati - dipendono da feature
- * (sync offline, push) fuori dallo scope di questa fase.
+ * tema, badge notifiche e pallino profilo. Il pulsante di sync manuale
+ * (offline queue) non è ancora stato portato - dipende dall'offline layer,
+ * fuori dallo scope di questa fase.
  *
  * Il toggle tema qui è uno switch semplice con icone sole/luna, non
  * l'animazione CSS sole/luna/nuvole/stelle della webapp: quella è
@@ -58,6 +59,8 @@ export default function Navbar() {
             )}
           </View>
         </Pressable>
+
+        <NotificationBadge />
 
         <Pressable
           onPress={() => navigation.navigate("Profile")}

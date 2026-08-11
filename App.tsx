@@ -6,7 +6,9 @@ import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { proactiveTokenRefresh } from "./src/api/auth";
+import NotificationPopup from "./src/components/NotificationPopup";
 import { NetworkProvider } from "./src/context/NetworkContext";
+import { NotificationProvider } from "./src/context/NotificationContext";
 import { ThemeProvider } from "./src/context/ThemeContext";
 import RootNavigator from "./src/navigation/RootNavigator";
 import { clearSessionTokensIfNeeded } from "./src/services/storage";
@@ -39,8 +41,11 @@ export default function App() {
       <SafeAreaProvider>
         <NetworkProvider>
           <ThemeProvider>
-            <StatusBar style="auto" />
-            <RootNavigator />
+            <NotificationProvider>
+              <StatusBar style="auto" />
+              <RootNavigator />
+              <NotificationPopup />
+            </NotificationProvider>
           </ThemeProvider>
         </NetworkProvider>
       </SafeAreaProvider>

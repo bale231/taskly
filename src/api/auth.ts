@@ -282,6 +282,31 @@ export const updateTheme = async (theme: string) => {
   return res.json();
 };
 
+// 🔔 Aggiorna preferenze notifiche push
+export const updateNotificationPreferences = async (pushEnabled: boolean) => {
+  try {
+    const res = await fetch(`${API_URL}/notifications/preferences/`, {
+      method: "PATCH",
+      headers: {
+        Authorization: await authHeader(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ push_notifications_enabled: pushEnabled }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("Errore risposta:", errorText);
+      return { error: `HTTP ${res.status}`, message: errorText };
+    }
+
+    return res.json();
+  } catch (error) {
+    console.error("Errore fetch:", error);
+    return { error: "Network error", message: String(error) };
+  }
+};
+
 // 🔑 Richiesta reset password via email (usata da ForgotPassword)
 export const requestPasswordReset = async (email: string) => {
   const response = await fetch(`${API_URL}/password-reset/request/`, {
