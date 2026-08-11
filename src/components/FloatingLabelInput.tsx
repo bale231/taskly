@@ -42,9 +42,32 @@ export default function FloatingLabelInput({
     Animated.timing(anim, {
       toValue: floating ? 1 : 0,
       duration: 150,
-      useNativeDriver: false, // animiamo fontSize/top, non trasformazioni
+      useNativeDriver: true,
     }).start();
   }, [anim, floating]);
+
+  // Flip della label quando il testo cambia (es. Username <-> Email):
+  // nella webapp era gsap che portava rotateY a 90°, cambiava il testo
+  // a scatto, poi tornava da -90° a 0°. Qui stesso schema con Animated.
+  const flip = useRef(new Animated.Value(0)).current;
+  const previousLabel = useRef(label);
+
+  useEffect(() => {
+    if (previousLabel.current === label) return;
+    previousLabel.current = label;
+
+    flip.setValue(0);
+    Animated.timing(flip, {
+      toValue: 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [label, flip]);
+
+  const flipRotateY = flip.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: ["0deg", "90deg", "0deg"],
+  });
 
   const borderColor = error
     ? "#EF4444"
@@ -64,12 +87,22 @@ export default function FloatingLabelInput({
           style={{
             position: "absolute",
             left: 16,
-            top: anim.interpolate({ inputRange: [0, 1], outputRange: [19, 8] }),
-            fontSize: anim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [16, 12],
-            }),
+            top: 21,
+            fontSize: 16,
             color: error ? "#EF4444" : focused ? "#3B82F6" : "#9CA3AF",
+            // Il rimpicciolimento/spostamento è transform (translateY + scale)
+            // invece di top/fontSize animati: quelli non sono supportati dal
+            // native animated module, e mischiare driver JS e nativo sullo
+            // stesso nodo fa crashare Reanimated ("moved to native earlier").
+            transform: [
+              {
+                translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [0, -11] }),
+              },
+              {
+                scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.75] }),
+              },
+              { rotateY: flipRotateY },
+            ],
           }}
         >
           {label}

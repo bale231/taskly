@@ -20,6 +20,10 @@ import { setTokens } from "../services/storage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 
+// Pressable animabile: serve per interpolare backgroundColor sul tap,
+// cosa che il Pressable normale non supporta.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 /**
  * Genera messaggi di errore specifici a partire dal messaggio del backend.
  * Logica identica alla webapp (src/pages/Login.tsx).
@@ -95,6 +99,38 @@ export default function LoginScreen({ navigation }: Props) {
 
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formTranslateY = useRef(new Animated.Value(50)).current;
+
+  // Transizione del pill attivo nel toggle Username/Email: nella webapp
+  // era la classe Tailwind "transition" sullo sfondo bianco. 0 = username
+  // attivo, 1 = email attivo.
+  const modeAnim = useRef(
+    new Animated.Value(loginMode === "email" ? 1 : 0)
+  ).current;
+
+  useEffect(() => {
+    Animated.timing(modeAnim, {
+      toValue: loginMode === "email" ? 1 : 0,
+      duration: 200,
+      useNativeDriver: false, // animiamo backgroundColor, non trasformazioni
+    }).start();
+  }, [loginMode, modeAnim]);
+
+  const usernamePillBg = modeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#FFFFFF", "transparent"],
+  });
+  const emailPillBg = modeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["transparent", "#FFFFFF"],
+  });
+  const usernameTextColor = modeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#111827", "#374151"],
+  });
+  const emailTextColor = modeAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#374151", "#111827"],
+  });
 
   // Check auth FIRST before showing anything
   useEffect(() => {
@@ -232,7 +268,7 @@ export default function LoginScreen({ navigation }: Props) {
               padding: 4,
             }}
           >
-            <Pressable
+            <AnimatedPressable
               onPress={() => setLoginMode("username")}
               style={{
                 flex: 1,
@@ -243,24 +279,24 @@ export default function LoginScreen({ navigation }: Props) {
                 borderRadius: 8,
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: loginMode === "username" ? "#FFFFFF" : "transparent",
+                backgroundColor: usernamePillBg,
               }}
             >
               <User
                 size={16}
                 color={loginMode === "username" ? "#111827" : "#374151"}
               />
-              <Text
+              <Animated.Text
                 style={{
                   fontSize: 14,
                   fontWeight: "500",
-                  color: loginMode === "username" ? "#111827" : "#374151",
+                  color: usernameTextColor,
                 }}
               >
                 Username
-              </Text>
-            </Pressable>
-            <Pressable
+              </Animated.Text>
+            </AnimatedPressable>
+            <AnimatedPressable
               onPress={() => setLoginMode("email")}
               style={{
                 flex: 1,
@@ -271,23 +307,23 @@ export default function LoginScreen({ navigation }: Props) {
                 borderRadius: 8,
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: loginMode === "email" ? "#FFFFFF" : "transparent",
+                backgroundColor: emailPillBg,
               }}
             >
               <AtSign
                 size={16}
                 color={loginMode === "email" ? "#111827" : "#374151"}
               />
-              <Text
+              <Animated.Text
                 style={{
                   fontSize: 14,
                   fontWeight: "500",
-                  color: loginMode === "email" ? "#111827" : "#374151",
+                  color: emailTextColor,
                 }}
               >
                 Email
-              </Text>
-            </Pressable>
+              </Animated.Text>
+            </AnimatedPressable>
           </View>
         </View>
 
