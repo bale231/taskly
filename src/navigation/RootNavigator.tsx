@@ -3,7 +3,9 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as Linking from "expo-linking";
 import ForgotPasswordScreen from "../screens/ForgotPasswordScreen";
 import HomeScreen from "../screens/HomeScreen";
+import ListDetailScreen from "../screens/ListDetailScreen";
 import LoginScreen from "../screens/LoginScreen";
+import ProfileScreen from "../screens/ProfileScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import ResetPasswordScreen from "../screens/ResetPasswordScreen";
 import type { RootStackParamList } from "./types";
@@ -24,6 +26,8 @@ const linking: LinkingOptions<RootStackParamList> = {
       ForgotPassword: "forgot-password",
       ResetPassword: "reset-password/:uid/:token",
       Home: "home",
+      ListDetail: "lists/:listId",
+      Profile: "profile",
     },
   },
 };
@@ -40,6 +44,8 @@ export default function RootNavigator() {
         <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="ListDetail" component={ListDetailScreen} />
+        <Stack.Screen name="Profile" component={ProfileScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

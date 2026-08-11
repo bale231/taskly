@@ -5,6 +5,8 @@
  *   "/forgot-password"               -> ForgotPassword
  *   "/reset-password/:uid/:token"    -> ResetPassword
  *   "/home"                          -> Home
+ *   "/lists/:id"                     -> ListDetail
+ *   "/profile"                       -> Profile
  */
 export type RootStackParamList = {
   Login: undefined;
@@ -12,4 +14,6 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   ResetPassword: { uid: string; token: string };
   Home: undefined;
+  ListDetail: { listId: number };
+  Profile: undefined;
 };
