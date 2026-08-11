@@ -115,13 +115,17 @@ export default function LoginScreen({ navigation }: Props) {
     }).start();
   }, [loginMode, modeAnim]);
 
+  // "transparent" equivale a rgba(0,0,0,0): interpolando da "#FFFFFF" a
+  // "transparent" i canali RGB scivolano verso il nero mentre l'alpha
+  // scende, quindi il pill lampeggia scuro a metà transizione. Si anima
+  // invece solo l'alpha, tenendo i canali RGB fissi sul bianco.
   const usernamePillBg = modeAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["#FFFFFF", "transparent"],
+    outputRange: ["rgba(255,255,255,1)", "rgba(255,255,255,0)"],
   });
   const emailPillBg = modeAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: ["transparent", "#FFFFFF"],
+    outputRange: ["rgba(255,255,255,0)", "rgba(255,255,255,1)"],
   });
   const usernameTextColor = modeAnim.interpolate({
     inputRange: [0, 1],
