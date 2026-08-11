@@ -223,39 +223,67 @@ export default function LoginScreen({ navigation }: Props) {
           <Text className="mb-2 text-xs font-medium text-gray-500">
             Accedi con
           </Text>
-          <View className="w-full flex-row rounded-xl bg-gray-200 p-1">
+          <View
+            style={{
+              width: "100%",
+              flexDirection: "row",
+              borderRadius: 12,
+              backgroundColor: "#E5E7EB",
+              padding: 4,
+            }}
+          >
             <Pressable
               onPress={() => setLoginMode("username")}
-              className={`flex-1 flex-row items-center justify-center gap-2 rounded-lg px-3 py-2 ${
-                loginMode === "username" ? "bg-white shadow" : ""
-              }`}
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                backgroundColor: loginMode === "username" ? "#FFFFFF" : "transparent",
+              }}
             >
               <User
                 size={16}
                 color={loginMode === "username" ? "#111827" : "#374151"}
               />
               <Text
-                className={`text-sm font-medium ${
-                  loginMode === "username" ? "text-gray-900" : "text-gray-700"
-                }`}
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: loginMode === "username" ? "#111827" : "#374151",
+                }}
               >
                 Username
               </Text>
             </Pressable>
             <Pressable
               onPress={() => setLoginMode("email")}
-              className={`flex-1 flex-row items-center justify-center gap-2 rounded-lg px-3 py-2 ${
-                loginMode === "email" ? "bg-white shadow" : ""
-              }`}
+              style={{
+                flex: 1,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                borderRadius: 8,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                backgroundColor: loginMode === "email" ? "#FFFFFF" : "transparent",
+              }}
             >
               <AtSign
                 size={16}
                 color={loginMode === "email" ? "#111827" : "#374151"}
               />
               <Text
-                className={`text-sm font-medium ${
-                  loginMode === "email" ? "text-gray-900" : "text-gray-700"
-                }`}
+                style={{
+                  fontSize: 14,
+                  fontWeight: "500",
+                  color: loginMode === "email" ? "#111827" : "#374151",
+                }}
               >
                 Email
               </Text>

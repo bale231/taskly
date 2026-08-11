@@ -19,7 +19,7 @@ const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL("/"), "taskly://"],
   config: {
     screens: {
-      Login: "",
+      Login: "login",
       Register: "register",
       ForgotPassword: "forgot-password",
       ResetPassword: "reset-password/:uid/:token",
