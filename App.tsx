@@ -2,10 +2,10 @@ import "./global.css";
 
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { proactiveTokenRefresh } from "./src/api/auth";
+import AnimatedSplashScreen from "./src/components/AnimatedSplashScreen";
 import NotificationPopup from "./src/components/NotificationPopup";
 import { NetworkProvider } from "./src/context/NetworkContext";
 import { NotificationProvider } from "./src/context/NotificationContext";
@@ -20,8 +20,12 @@ export default function App() {
     const bootstrap = async () => {
       // Ordine importante: prima si scartano i token di una sessione
       // non persistente, poi si tenta il refresh proattivo su ciò che resta.
-      await clearSessionTokensIfNeeded();
-      await proactiveTokenRefresh();
+      // Il delay minimo evita che lo splash animato lampeggi per una
+      // frazione di secondo quando il bootstrap è già istantaneo.
+      await Promise.all([
+        clearSessionTokensIfNeeded().then(() => proactiveTokenRefresh()),
+        new Promise((resolve) => setTimeout(resolve, 800)),
+      ]);
       setBootstrapped(true);
     };
 
@@ -29,11 +33,7 @@ export default function App() {
   }, []);
 
   if (!bootstrapped) {
-    return (
-      <View className="flex-1 items-center justify-center bg-gray-100">
-        <ActivityIndicator size="large" color="#3B82F6" />
-      </View>
-    );
+    return <AnimatedSplashScreen />;
   }
 
   return (

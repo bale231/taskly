@@ -14,10 +14,9 @@
     "android": {
       "package": "com.bale231.taskly",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0A4F32",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundImage": "./assets/android-icon-background.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -30,9 +29,9 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 220,
-          "backgroundColor": "#F3F4F6",
+          "backgroundColor": "#0A4F32",
           "dark": {
-            "backgroundColor": "#111827"
+            "backgroundColor": "#0A4F32"
           }
         }
       ]

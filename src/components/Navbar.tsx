@@ -25,7 +25,7 @@ export default function Navbar() {
   return (
     <View
       className="w-full flex-row items-center justify-between border-b border-gray-200/50 bg-white/90 px-4 dark:border-white/20 dark:bg-gray-900/90"
-      style={{ height: 64 + insets.top, paddingTop: insets.top }}
+      style={{ height: 76 + insets.top, paddingTop: insets.top }}
     >
       <Pressable
         onPress={() => navigation.navigate("Home")}
@@ -34,10 +34,10 @@ export default function Navbar() {
         <Image
           source={
             isDark
-              ? require("../../assets/logo-themedark.png")
-              : require("../../assets/logo-themelight.png")
+              ? require("../../assets/logo-taskly-themedark.png")
+              : require("../../assets/logo-taskly-themelight.png")
           }
-          style={{ width: 120, height: 36, resizeMode: "contain" }}
+          style={{ width: 76, height: 76, resizeMode: "contain" }}
         />
       </Pressable>
 

@@ -183,7 +183,7 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-themelight.png")}
+            source={require("../../assets/logo-taskly-themelight.png")}
             style={{ width: 270, height: 80, resizeMode: "contain" }}
           />
         </View>
