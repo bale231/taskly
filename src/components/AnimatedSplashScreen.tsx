@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { View } from "react-native";
+import { Image, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -32,10 +32,22 @@ export default function AnimatedSplashScreen() {
         backgroundColor: "#0A4F32",
       }}
     >
-      <Animated.Image
-        source={require("../../assets/icon-taskly.png")}
-        style={[{ width: 220, height: 120, resizeMode: "contain" }, animatedStyle]}
-      />
+      <Animated.View
+        style={[
+          {
+            width: 180,
+            height: 180,
+            borderRadius: 90,
+            overflow: "hidden",
+          },
+          animatedStyle,
+        ]}
+      >
+        <Image
+          source={require("../../assets/splash-icon.png")}
+          style={{ width: 180, height: 180, resizeMode: "cover" }}
+        />
+      </Animated.View>
     </View>
   );
 }

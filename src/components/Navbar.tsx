@@ -1,9 +1,13 @@
 import { useNavigation } from "@react-navigation/native";
 import { Moon, Sun, User } from "lucide-react-native";
+import { useEffect, useState } from "react";
 import { Image, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getCurrentUserJWT } from "../api/auth";
 import NotificationBadge from "./NotificationBadge";
 import { useTheme } from "../context/ThemeContext";
+
+const AVATAR_BASE_URL = "https://bale231.pythonanywhere.com";
 
 /**
  * Port parziale di src/components/Navbar.tsx della webapp: logo, toggle
@@ -21,15 +25,28 @@ export default function Navbar() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const isDark = theme === "dark";
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+
+  // Ricarica l'avatar ogni volta che la Navbar torna in focus (es. dopo
+  // aver cambiato foto in ProfileScreen), non solo al mount.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      getCurrentUserJWT().then((data) => {
+        setAvatarUri(data?.profile_picture ?? null);
+      });
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   return (
     <View
-      className="w-full flex-row items-center justify-between border-b border-gray-200/50 bg-white/90 px-4 dark:border-white/20 dark:bg-gray-900/90"
-      style={{ height: 76 + insets.top, paddingTop: insets.top }}
+      className="w-full flex-row items-center justify-between border-b border-gray-200/50 bg-white/90 pl-2 pr-3 dark:border-white/20 dark:bg-gray-900/90"
+      style={{ height: 72 + insets.top, paddingTop: insets.top }}
     >
       <Pressable
         onPress={() => navigation.navigate("Home")}
         hitSlop={8}
+        style={{ height: "100%", justifyContent: "center", flexShrink: 1 }}
       >
         <Image
           source={
@@ -37,11 +54,11 @@ export default function Navbar() {
               ? require("../../assets/logo-taskly-themedark.png")
               : require("../../assets/logo-taskly-themelight.png")
           }
-          style={{ width: 76, height: 76, resizeMode: "contain" }}
+          style={{ width: 150, height: 64, resizeMode: "contain" }}
         />
       </Pressable>
 
-      <View className="flex-row items-center gap-3">
+      <View className="flex-row items-center gap-2">
         <Pressable
           onPress={() => setTheme(isDark ? "light" : "dark")}
           className="h-9 w-16 flex-row items-center rounded-full bg-gray-200 px-1 dark:bg-gray-700"
@@ -64,9 +81,20 @@ export default function Navbar() {
 
         <Pressable
           onPress={() => navigation.navigate("Profile")}
-          className="h-10 w-10 items-center justify-center rounded-full bg-gray-300 dark:bg-gray-700"
+          className="h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gray-300 dark:bg-gray-700"
         >
-          <User size={20} color="#6B7280" />
+          {avatarUri ? (
+            <Image
+              source={{
+                uri: avatarUri.startsWith("http")
+                  ? avatarUri
+                  : `${AVATAR_BASE_URL}${avatarUri}`,
+              }}
+              style={{ width: 40, height: 40 }}
+            />
+          ) : (
+            <User size={20} color="#6B7280" />
+          )}
         </Pressable>
       </View>
     </View>
