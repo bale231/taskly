@@ -56,7 +56,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
       const data = await fetchNotificationsAPI();
       setNotifications(data);
     } catch (error) {
-      console.error("Errore nel caricamento notifiche:", error);
+      // console.warn, non console.error: il polling ogni 30s può incontrare
+      // errori di rete transitori che non devono aprire la LogBox a schermo
+      // intero in dev mode - l'errore è già gestito, i dati restano quelli
+      // dell'ultimo fetch riuscito.
+      console.warn("Errore nel caricamento notifiche:", error);
     }
   }, []);
 
