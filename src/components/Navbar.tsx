@@ -27,14 +27,19 @@ export default function Navbar() {
   const isDark = theme === "dark";
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
 
-  // Ricarica l'avatar ogni volta che la Navbar torna in focus (es. dopo
-  // aver cambiato foto in ProfileScreen), non solo al mount.
+  // Carica l'avatar al mount, e lo ricarica ogni volta che la Navbar
+  // torna in focus (es. dopo aver cambiato foto in ProfileScreen).
+  // "focus" da solo non basta: non scatta al primo render se lo schermo
+  // è già quello attivo, quindi l'avatar non appariva al lancio dell'app.
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => {
+    const load = () => {
       getCurrentUserJWT().then((data) => {
         setAvatarUri(data?.profile_picture ?? null);
       });
-    });
+    };
+
+    load();
+    const unsubscribe = navigation.addListener("focus", load);
     return unsubscribe;
   }, [navigation]);
 
@@ -51,10 +56,15 @@ export default function Navbar() {
         <Image
           source={
             isDark
-              ? require("../../assets/logo-taskly-themedark.png")
-              : require("../../assets/logo-taskly-themelight.png")
+              ? require("../../assets/logo-taskly-themedark-cropped.png")
+              : require("../../assets/logo-taskly-themelight-cropped.png")
           }
-          style={{ width: 150, height: 64, resizeMode: "contain" }}
+          // I file "-cropped" hanno i margini vuoti rimossi: i file originali
+          // avevano il wordmark su un canvas 500x500 che occupava solo
+          // l'80% della larghezza e il 28% dell'altezza, quindi con
+          // resizeMode contain il logo sembrava piccolo anche aumentando
+          // le dimensioni del box.
+          style={{ width: 130, height: 52, resizeMode: "contain" }}
         />
       </Pressable>
 

@@ -215,7 +215,7 @@ export default function LoginScreen({ navigation }: Props) {
       <View className="flex-1 items-center justify-center bg-gray-100">
         <View className="items-center gap-4">
           <Image
-            source={require("../../assets/logo-taskly-themelight.png")}
+            source={require("../../assets/logo-taskly-themelight-cropped.png")}
             style={{ width: 200, height: 60, resizeMode: "contain" }}
           />
           <ActivityIndicator size="large" color="#3B82F6" />
@@ -247,7 +247,7 @@ export default function LoginScreen({ navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-taskly-themelight.png")}
+            source={require("../../assets/logo-taskly-themelight-cropped.png")}
             style={{ width: 270, height: 80, resizeMode: "contain" }}
           />
         </View>
