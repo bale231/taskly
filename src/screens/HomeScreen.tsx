@@ -1,5 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
+import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   Archive,
   ArchiveRestore,
@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
   Pressable,
   ScrollView,
   Text,
@@ -710,13 +711,17 @@ export default function HomeScreen({ navigation }: Props) {
         ref={categoryPickerRef}
         onDismiss={() => setCategoryPickerOpen(false)}
         enableDynamicSizing
+        maxDynamicContentSize={Dimensions.get("window").height - insets.top - 40}
         backgroundStyle={{ backgroundColor: isDark ? "#111827" : "#FFFFFF" }}
         handleIndicatorStyle={{ backgroundColor: isDark ? "#4B5563" : "#D1D5DB" }}
         backdropComponent={(props) => (
           <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.3} />
         )}
       >
-        <BottomSheetView style={{ padding: 16, paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
+        <BottomSheetScrollView
+          style={{ paddingHorizontal: 16 }}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}
+        >
           <Pressable
             onPress={() => handleSelectCategory(null)}
             className="border-b border-gray-100 py-3 dark:border-gray-800"
@@ -734,7 +739,7 @@ export default function HomeScreen({ navigation }: Props) {
               <Text className="text-center text-gray-900 dark:text-white">{cat.name}</Text>
             </Pressable>
           ))}
-        </BottomSheetView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* Conferma eliminazione lista */}
