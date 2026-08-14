@@ -616,7 +616,10 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       {/* Menu di ordinamento */}
       <Modal visible={showSortMenu} transparent animationType="slide">
         <Pressable className="flex-1 justify-end bg-black/30" onPress={() => setShowSortMenu(false)}>
-          <View className="rounded-t-3xl bg-white p-6 pb-8 dark:bg-gray-900">
+          <View
+            className="rounded-t-3xl bg-white p-6 dark:bg-gray-900"
+            style={{ paddingBottom: Math.max(insets.bottom, 24) + 8 }}
+          >
             <Text className="mb-4 text-center text-lg font-semibold text-gray-900 dark:text-white">
               Ordina per
             </Text>

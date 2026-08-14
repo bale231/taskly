@@ -63,6 +63,11 @@ export default function SwipeableRow({
 
   const pan = Gesture.Pan()
     .enabled(!disabled)
+    // Attiva il pan solo su un movimento orizzontale deciso, e cede subito
+    // il gesto allo ScrollView se il movimento è prevalentemente verticale:
+    // senza questi vincoli il pan intercettava anche lo scroll della lista.
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-10, 10])
     .onUpdate((e) => {
       const clamped = Math.max(
         -MAX_TRANSLATE,

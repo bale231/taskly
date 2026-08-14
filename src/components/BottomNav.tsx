@@ -3,6 +3,7 @@ import { Home, ListFilter, Pencil, Plus, Search, User } from "lucide-react-nativ
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedPressable from "./AnimatedPressable";
+import { useTheme } from "../context/ThemeContext";
 import type { ListSortOption } from "../types/todo";
 
 interface BottomNavProps {
@@ -54,6 +55,8 @@ export default function BottomNav({
   const navigation = useNavigation<any>();
   const route = useRoute();
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const isHome = route.name === "Home";
   const isProfile = route.name === "Profile";
 
@@ -70,16 +73,16 @@ export default function BottomNav({
               if (!isHome) navigation.navigate("Home");
             }}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
-          >
-            <View
-              className={`rounded-2xl p-2 ${isHome ? "bg-blue-100 dark:bg-blue-900/50" : ""}`}
-            >
+            activeBackgroundColor={isDark ? "rgba(30,58,138,0.5)" : "#DBEAFE"}
+            pillStyle={{ borderRadius: 16, padding: 8 }}
+            icon={
               <Home
                 size={28}
                 strokeWidth={isHome ? 2.5 : 2}
                 color={isHome ? "#2563EB" : "#6B7280"}
               />
-            </View>
+            }
+          >
             <Text
               className={`text-xs font-semibold ${isHome ? "text-blue-600 dark:text-blue-400" : "text-gray-500 dark:text-gray-400"}`}
             >
@@ -93,16 +96,16 @@ export default function BottomNav({
             active={isProfile}
             onPress={() => navigation.navigate("Profile")}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
-          >
-            <View
-              className={`rounded-2xl p-2 ${isProfile ? "bg-purple-100 dark:bg-purple-900/50" : ""}`}
-            >
+            activeBackgroundColor={isDark ? "rgba(88,28,135,0.5)" : "#F3E8FF"}
+            pillStyle={{ borderRadius: 16, padding: 8 }}
+            icon={
               <User
                 size={28}
                 strokeWidth={isProfile ? 2.5 : 2}
                 color={isProfile ? "#9333EA" : "#6B7280"}
               />
-            </View>
+            }
+          >
             <Text
               className={`text-xs font-semibold ${isProfile ? "text-purple-600 dark:text-purple-400" : "text-gray-500 dark:text-gray-400"}`}
             >
@@ -127,16 +130,16 @@ export default function BottomNav({
             onPress={onToggleEdit}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
             accessibilityLabel={editTitle}
-          >
-            <View
-              className={`rounded-2xl p-2 ${editMode ? "bg-green-100 dark:bg-green-900/50" : ""}`}
-            >
+            activeBackgroundColor={isDark ? "rgba(20,83,45,0.5)" : "#DCFCE7"}
+            pillStyle={{ borderRadius: 16, padding: 8 }}
+            icon={
               <Pencil
                 size={28}
                 strokeWidth={editMode ? 2.5 : 2}
                 color={editMode ? "#16A34A" : "#6B7280"}
               />
-            </View>
+            }
+          >
             <Text
               className={`text-xs font-semibold ${editMode ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}
             >

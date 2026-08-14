@@ -13,13 +13,13 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   archiveList,
   createCategory,
@@ -63,6 +63,7 @@ const CARD_BORDER: Record<string, string> = {
 export default function HomeScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const insets = useSafeAreaInsets();
   const categoryPickerRef = useRef<BottomSheetModal>(null);
 
   const [user, setUser] = useState<{ id: number } | null>(null);
@@ -715,7 +716,7 @@ export default function HomeScreen({ navigation }: Props) {
           <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.3} />
         )}
       >
-        <BottomSheetView style={{ padding: 16, paddingBottom: 32 }}>
+        <BottomSheetView style={{ padding: 16, paddingBottom: Math.max(insets.bottom, 16) + 16 }}>
           <Pressable
             onPress={() => handleSelectCategory(null)}
             className="border-b border-gray-100 py-3 dark:border-gray-800"
