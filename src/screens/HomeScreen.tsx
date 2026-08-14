@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import {
   Archive,
   ArchiveRestore,
@@ -9,7 +10,7 @@ import {
   Users,
   X,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -30,15 +31,19 @@ import {
   fetchAllLists,
   fetchCategorySortAlpha,
   fetchListsSortOrder,
+  getSelectedCategory,
   saveSelectedCategory,
   unarchiveList,
   updateListsSortOrder,
 } from "../api/todos";
 import { getCurrentUserJWT, logout } from "../api/auth";
 import AnimatedAlert from "../components/AnimatedAlert";
+import AnimatedPressable from "../components/AnimatedPressable";
 import BottomNav from "../components/BottomNav";
+import BubbleModal from "../components/BubbleModal";
 import Navbar from "../components/Navbar";
 import SwipeableRow from "../components/SwipeableRow";
+import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
 import type { Category, ListSortOption, TodoList } from "../types/todo";
 
@@ -56,11 +61,20 @@ const CARD_BORDER: Record<string, string> = {
 };
 
 export default function HomeScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const categoryPickerRef = useRef<BottomSheetModal>(null);
+
   const [user, setUser] = useState<{ id: number } | null>(null);
   const [lists, setLists] = useState<TodoList[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (categoryPickerOpen) categoryPickerRef.current?.present();
+    else categoryPickerRef.current?.dismiss();
+  }, [categoryPickerOpen]);
 
   const [sortOption, setSortOption] = useState<ListSortOption>("created");
   const [categorySortAlpha, setCategorySortAlpha] = useState(false);
@@ -131,7 +145,17 @@ export default function HomeScreen({ navigation }: Props) {
         console.error("Impossibile caricare preferenze:", err);
       }
 
-      await Promise.all([fetchLists(), fetchCategories()]);
+      const [, categoriesData] = await Promise.all([fetchLists(), fetchCategories()]);
+
+      try {
+        const result = await getSelectedCategory();
+        if (result && result.selected_category !== null && result.selected_category !== undefined) {
+          const cat = categoriesData.find((c) => c.id === result.selected_category);
+          if (cat) setSelectedCategory(cat);
+        }
+      } catch (err) {
+        console.warn("Impossibile caricare la categoria selezionata:", err);
+      }
     };
     load();
   }, [navigation, fetchLists, fetchCategories]);
@@ -378,7 +402,8 @@ export default function HomeScreen({ navigation }: Props) {
             <Text className="text-sm font-medium text-white">Categoria</Text>
           </Pressable>
 
-          <Pressable
+          <AnimatedPressable
+            active={showArchived}
             onPress={() => setShowArchived((prev) => !prev)}
             className={`flex-1 flex-row items-center justify-center gap-2 rounded-xl py-3 ${
               showArchived ? "bg-orange-500" : "bg-gray-500"
@@ -397,7 +422,7 @@ export default function HomeScreen({ navigation }: Props) {
                 <Text className="text-xs text-white">{archivedCount}</Text>
               </View>
             )}
-          </Pressable>
+          </AnimatedPressable>
 
           {!searchOpen && (
             <Pressable
@@ -547,9 +572,15 @@ export default function HomeScreen({ navigation }: Props) {
       />
 
       {/* Modale creazione/modifica lista */}
-      <Modal visible={showForm} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/30 p-4">
-          <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+      <BubbleModal
+        visible={showForm}
+        onRequestClose={() => {
+          setShowForm(false);
+          setEditListId(null);
+        }}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
             <Text className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
               {editListId !== null ? "Modifica Lista" : "Nuova Lista"}
             </Text>
@@ -630,13 +661,18 @@ export default function HomeScreen({ navigation }: Props) {
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+      </BubbleModal>
 
       {/* Modale categoria */}
-      <Modal visible={showCatForm} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/30 p-4">
-          <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+      <BubbleModal
+        visible={showCatForm}
+        onRequestClose={() => {
+          setShowCatForm(false);
+          setEditCatId(null);
+        }}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
             <Text className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
               {editCatId ? "Modifica Categoria" : "Nuova Categoria"}
             </Text>
@@ -666,64 +702,69 @@ export default function HomeScreen({ navigation }: Props) {
               </Pressable>
             </View>
           </View>
-        </View>
-      </Modal>
+      </BubbleModal>
 
-      {/* Selettore categoria (bottom sheet semplice) */}
-      <Modal visible={categoryPickerOpen} transparent animationType="slide">
-        <Pressable
-          className="flex-1 justify-end bg-black/30"
-          onPress={() => setCategoryPickerOpen(false)}
-        >
-          <View className="rounded-t-2xl bg-white p-4 dark:bg-gray-900">
+      {/* Selettore categoria: bottom sheet nativo con gesture di trascinamento */}
+      <BottomSheetModal
+        ref={categoryPickerRef}
+        onDismiss={() => setCategoryPickerOpen(false)}
+        enableDynamicSizing
+        backgroundStyle={{ backgroundColor: isDark ? "#111827" : "#FFFFFF" }}
+        handleIndicatorStyle={{ backgroundColor: isDark ? "#4B5563" : "#D1D5DB" }}
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.3} />
+        )}
+      >
+        <BottomSheetView style={{ padding: 16, paddingBottom: 32 }}>
+          <Pressable
+            onPress={() => handleSelectCategory(null)}
+            className="border-b border-gray-100 py-3 dark:border-gray-800"
+          >
+            <Text className="text-center text-gray-900 dark:text-white">
+              Tutte le categorie
+            </Text>
+          </Pressable>
+          {categories.map((cat) => (
             <Pressable
-              onPress={() => handleSelectCategory(null)}
+              key={cat.id}
+              onPress={() => handleSelectCategory(cat)}
               className="border-b border-gray-100 py-3 dark:border-gray-800"
             >
-              <Text className="text-center text-gray-900 dark:text-white">
-                Tutte le categorie
-              </Text>
+              <Text className="text-center text-gray-900 dark:text-white">{cat.name}</Text>
             </Pressable>
-            {categories.map((cat) => (
-              <Pressable
-                key={cat.id}
-                onPress={() => handleSelectCategory(cat)}
-                className="border-b border-gray-100 py-3 dark:border-gray-800"
-              >
-                <Text className="text-center text-gray-900 dark:text-white">{cat.name}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
+          ))}
+        </BottomSheetView>
+      </BottomSheetModal>
 
       {/* Conferma eliminazione lista */}
-      <Modal visible={showDeleteConfirmId !== null} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/30 p-4">
-          <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
-            <Text className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
-              Confermi eliminazione?
-            </Text>
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={() => setShowDeleteConfirmId(null)}
-                className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
-              >
-                <Text className="text-center text-gray-700 dark:text-gray-300">No</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  if (showDeleteConfirmId !== null) handleDeleteList(showDeleteConfirmId);
-                  setShowDeleteConfirmId(null);
-                }}
-                className="flex-1 rounded-lg bg-red-600 py-2.5"
-              >
-                <Text className="text-center font-medium text-white">Sì</Text>
-              </Pressable>
-            </View>
+      <BubbleModal
+        visible={showDeleteConfirmId !== null}
+        onRequestClose={() => setShowDeleteConfirmId(null)}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+          <Text className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
+            Confermi eliminazione?
+          </Text>
+          <View className="flex-row gap-3">
+            <Pressable
+              onPress={() => setShowDeleteConfirmId(null)}
+              className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
+            >
+              <Text className="text-center text-gray-700 dark:text-gray-300">No</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                if (showDeleteConfirmId !== null) handleDeleteList(showDeleteConfirmId);
+                setShowDeleteConfirmId(null);
+              }}
+              className="flex-1 rounded-lg bg-red-600 py-2.5"
+            >
+              <Text className="text-center font-medium text-white">Sì</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
+      </BubbleModal>
     </View>
   );
 }

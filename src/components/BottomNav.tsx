@@ -2,6 +2,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import { Home, ListFilter, Pencil, Plus, Search, User } from "lucide-react-native";
 import { Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AnimatedPressable from "./AnimatedPressable";
 import type { ListSortOption } from "../types/todo";
 
 interface BottomNavProps {
@@ -63,7 +64,8 @@ export default function BottomNav({
         style={{ paddingBottom: Math.max(insets.bottom, 12) }}
       >
         {showHome && (
-          <Pressable
+          <AnimatedPressable
+            active={isHome}
             onPress={() => {
               if (!isHome) navigation.navigate("Home");
             }}
@@ -83,11 +85,12 @@ export default function BottomNav({
             >
               Home
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         )}
 
         {showProfile && (
-          <Pressable
+          <AnimatedPressable
+            active={isProfile}
             onPress={() => navigation.navigate("Profile")}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
           >
@@ -105,21 +108,22 @@ export default function BottomNav({
             >
               Profilo
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         )}
 
         {showAdd && onAdd && (
-          <Pressable
+          <AnimatedPressable
             onPress={onAdd}
             className="-mt-8 h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-blue-600 shadow-xl dark:border-gray-900"
             accessibilityLabel={addTitle}
           >
             <Plus size={32} strokeWidth={2.5} color="#FFFFFF" />
-          </Pressable>
+          </AnimatedPressable>
         )}
 
         {showEdit && onToggleEdit && (
-          <Pressable
+          <AnimatedPressable
+            active={editMode}
             onPress={onToggleEdit}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
             accessibilityLabel={editTitle}
@@ -138,7 +142,7 @@ export default function BottomNav({
             >
               Modifica
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         )}
 
         {showSort && onCycleSortOption && (

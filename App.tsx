@@ -1,5 +1,6 @@
 import "./global.css";
 
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -42,9 +43,11 @@ export default function App() {
         <NetworkProvider>
           <ThemeProvider>
             <NotificationProvider>
-              <StatusBar style="auto" />
-              <RootNavigator />
-              <NotificationPopup />
+              <BottomSheetModalProvider>
+                <StatusBar style="auto" />
+                <RootNavigator />
+                <NotificationPopup />
+              </BottomSheetModalProvider>
             </NotificationProvider>
           </ThemeProvider>
         </NetworkProvider>

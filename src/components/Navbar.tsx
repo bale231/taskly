@@ -1,10 +1,11 @@
 import { useNavigation } from "@react-navigation/native";
-import { Moon, Sun, User } from "lucide-react-native";
+import { User } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Image, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getCurrentUserJWT } from "../api/auth";
 import NotificationBadge from "./NotificationBadge";
+import ThemeToggle from "./ThemeToggle";
 import { useTheme } from "../context/ThemeContext";
 
 const AVATAR_BASE_URL = "https://bale231.pythonanywhere.com";
@@ -14,11 +15,6 @@ const AVATAR_BASE_URL = "https://bale231.pythonanywhere.com";
  * tema, badge notifiche e pallino profilo. Il pulsante di sync manuale
  * (offline queue) non è ancora stato portato - dipende dall'offline layer,
  * fuori dallo scope di questa fase.
- *
- * Il toggle tema qui è uno switch semplice con icone sole/luna, non
- * l'animazione CSS sole/luna/nuvole/stelle della webapp: quella è
- * interamente CSS custom (ThemeToggle.tsx + un file di stili a parte) e
- * riprodurla in RN richiederebbe SVG animati dedicati.
  */
 export default function Navbar() {
   const { theme, setTheme } = useTheme();
@@ -69,23 +65,7 @@ export default function Navbar() {
       </Pressable>
 
       <View className="flex-row items-center gap-2">
-        <Pressable
-          onPress={() => setTheme(isDark ? "light" : "dark")}
-          className="h-9 w-16 flex-row items-center rounded-full bg-gray-200 px-1 dark:bg-gray-700"
-          accessibilityLabel="Cambia tema"
-        >
-          <View
-            className={`h-7 w-7 items-center justify-center rounded-full bg-white shadow ${
-              isDark ? "ml-auto" : ""
-            }`}
-          >
-            {isDark ? (
-              <Moon size={16} color="#1E293B" />
-            ) : (
-              <Sun size={16} color="#F59E0B" />
-            )}
-          </View>
-        </Pressable>
+        <ThemeToggle isDark={isDark} onToggle={() => setTheme(isDark ? "light" : "dark")} />
 
         <NotificationBadge />
 
