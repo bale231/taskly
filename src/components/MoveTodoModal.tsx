@@ -1,6 +1,9 @@
 import { ArrowRight, X } from "lucide-react-native";
 import { useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import BubbleModal from "./BubbleModal";
+import GlassSurface from "./GlassSurface";
+import { useTheme } from "../context/ThemeContext";
 
 interface MoveTodoModalProps {
   isOpen: boolean;
@@ -30,6 +33,8 @@ export default function MoveTodoModal({
   allLists,
   onMove,
 }: MoveTodoModalProps) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [selectedListId, setSelectedListId] = useState<number | null>(null);
   const availableLists = allLists.filter((list) => list.id !== currentListId);
 
@@ -41,12 +46,19 @@ export default function MoveTodoModal({
   };
 
   return (
-    <Modal visible={isOpen} transparent animationType="fade">
-      <View className="flex-1 items-center justify-center bg-black/30 p-4">
-        <View
-          className="w-full max-w-sm rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900"
-          style={{ maxHeight: "70%" }}
-        >
+    <BubbleModal
+      visible={isOpen}
+      onRequestClose={onClose}
+      contentStyle={{ width: "100%", maxWidth: 384 }}
+    >
+      <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
+
           <View className="mb-4 flex-row items-center justify-between">
             <Text className="text-xl font-semibold text-gray-900 dark:text-white">
               Sposta Todo
@@ -116,8 +128,7 @@ export default function MoveTodoModal({
               </Text>
             </Pressable>
           </View>
-        </View>
       </View>
-    </Modal>
+    </BubbleModal>
   );
 }

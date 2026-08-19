@@ -1,84 +1,48 @@
 import { type ReactNode } from "react";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
-
-const ROW_HEIGHT = 68; // altezza riga + gap, usata per calcolare lo spostamento in slot
+import { GripVertical } from "lucide-react-native";
+import { Pressable, View } from "react-native";
+import Animated, { useAnimatedStyle, withTiming } from "react-native-reanimated";
 
 interface DraggableTodoRowProps {
   children: ReactNode;
-  index: number;
-  itemCount: number;
-  /** Chiamato a fine drag con l'indice di destinazione, se cambiato. */
-  onReorder: (fromIndex: number, toIndex: number) => void;
-  onDragStart?: () => void;
-  onDragEnd?: () => void;
+  /** `drag()` di react-native-draggable-flatlist: attiva il riordino live, con le altre righe che scorrono in tempo reale come le icone della home iOS. */
+  onDrag: () => void;
+  /** true mentre QUESTA riga è quella attualmente sollevata e trascinata. */
+  isActive: boolean;
   disabled?: boolean;
 }
 
 /**
- * Sostituisce @dnd-kit (DndContext + useSortable) della webapp: qui il
- * riordino a lungo-premi-e-trascina è implementato con Gesture Handler +
- * Reanimated, l'accoppiata idiomatica per gesti fluidi in RN. Ogni riga
- * traccia il proprio spostamento in "slot" (multipli di ROW_HEIGHT) e
- * comunica il nuovo indice al genitore solo a fine gesto.
+ * Wrapper leggero attorno a ogni riga per DraggableFlatList
+ * (react-native-draggable-flatlist): il riordino vero e proprio (le altre
+ * righe che si spostano dal vivo mentre trascini, non solo a fine gesto) è
+ * gestito dalla libreria, che sostituisce il precedente sistema fatto a
+ * mano con Gesture Handler puro — quello muoveva solo la riga attiva e
+ * lasciava le altre ferme fino al riordino finale dei dati, risultando
+ * "scattoso" invece che fluido come un vero drag&drop.
  */
 export default function DraggableTodoRow({
   children,
-  index,
-  itemCount,
-  onReorder,
-  onDragStart,
-  onDragEnd,
+  onDrag,
+  isActive,
   disabled = false,
 }: DraggableTodoRowProps) {
-  const translateY = useSharedValue(0);
-  const isActive = useSharedValue(false);
-
-  const longPress = Gesture.LongPress()
-    .enabled(!disabled)
-    .minDuration(200)
-    .onStart(() => {
-      isActive.value = true;
-      if (onDragStart) runOnJS(onDragStart)();
-    });
-
-  const pan = Gesture.Pan()
-    .enabled(!disabled)
-    .onUpdate((e) => {
-      if (!isActive.value) return;
-      translateY.value = e.translationY;
-    })
-    .onEnd((e) => {
-      const slots = Math.round(e.translationY / ROW_HEIGHT);
-      const targetIndex = Math.max(0, Math.min(itemCount - 1, index + slots));
-
-      translateY.value = withSpring(0, { damping: 20, stiffness: 220 });
-      isActive.value = false;
-
-      if (targetIndex !== index) {
-        runOnJS(onReorder)(index, targetIndex);
-      }
-      if (onDragEnd) runOnJS(onDragEnd)();
-    });
-
-  const composed = Gesture.Simultaneous(longPress, pan);
-
   const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-    zIndex: isActive.value ? 10 : 0,
-    opacity: isActive.value ? 0.9 : 1,
-    shadowOpacity: isActive.value ? 0.2 : 0,
-    elevation: isActive.value ? 6 : 0,
+    opacity: withTiming(isActive ? 0.9 : 1, { duration: 120 }),
+    shadowOpacity: withTiming(isActive ? 0.2 : 0, { duration: 120 }),
+    elevation: isActive ? 6 : 0,
   }));
 
   return (
-    <GestureDetector gesture={composed}>
-      <Animated.View style={animatedStyle}>{children}</Animated.View>
-    </GestureDetector>
+    <Animated.View style={[animatedStyle, { flexDirection: "row", alignItems: "center" }]}>
+      {!disabled && (
+        <Pressable onLongPress={onDrag} disabled={isActive} className="pr-2 py-2">
+          <View>
+            <GripVertical size={18} color="#9CA3AF" />
+          </View>
+        </Pressable>
+      )}
+      <View className="flex-1">{children}</View>
+    </Animated.View>
   );
 }

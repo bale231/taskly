@@ -141,8 +141,8 @@ export default function RegisterScreen({ navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-taskly-themedark-cropped.png")}
-            style={{ width: 270, height: 80, resizeMode: "contain" }}
+            source={require("../../assets/logo-theme-dark.png")}
+            style={{ width: 270, height: 84, resizeMode: "contain" }}
           />
         </View>
 

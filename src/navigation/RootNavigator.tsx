@@ -1,7 +1,10 @@
 import { NavigationContainer, type LinkingOptions } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as Linking from "expo-linking";
+import FindUsersScreen from "../screens/FindUsersScreen";
 import ForgotPasswordScreen from "../screens/ForgotPasswordScreen";
+import FriendRequestsScreen from "../screens/FriendRequestsScreen";
+import FriendsScreen from "../screens/FriendsScreen";
 import HomeScreen from "../screens/HomeScreen";
 import ListDetailScreen from "../screens/ListDetailScreen";
 import LoginScreen from "../screens/LoginScreen";
@@ -28,6 +31,9 @@ const linking: LinkingOptions<RootStackParamList> = {
       Home: "home",
       ListDetail: "lists/:listId",
       Profile: "profile",
+      FindUsers: "find-users",
+      FriendRequests: "friend-requests",
+      Friends: "friends",
     },
   },
 };
@@ -46,6 +52,9 @@ export default function RootNavigator() {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="ListDetail" component={ListDetailScreen} />
         <Stack.Screen name="Profile" component={ProfileScreen} />
+        <Stack.Screen name="FindUsers" component={FindUsersScreen} />
+        <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} />
+        <Stack.Screen name="Friends" component={FriendsScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -1,8 +1,9 @@
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Home, ListFilter, Pencil, Plus, Search, User } from "lucide-react-native";
-import { Pressable, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedPressable from "./AnimatedPressable";
+import GlassSurface from "./GlassSurface";
 import { useTheme } from "../context/ThemeContext";
 import type { ListSortOption } from "../types/todo";
 
@@ -20,6 +21,8 @@ interface BottomNavProps {
   onCycleSortOption?: () => void;
   onAdd?: () => void;
   onSearch?: () => void;
+  /** Chiamato quando si preme Home mentre si è già nella schermata Home, come nella webapp (torna in cima invece di non fare nulla). */
+  onHomePress?: () => void;
   addTitle?: string;
   editTitle?: string;
 }
@@ -49,6 +52,7 @@ export default function BottomNav({
   onCycleSortOption,
   onAdd,
   onSearch,
+  onHomePress,
   addTitle = "Aggiungi",
   editTitle = "Modifica",
 }: BottomNavProps) {
@@ -63,14 +67,22 @@ export default function BottomNav({
   return (
     <View className="absolute bottom-0 left-0 right-0 z-50">
       <View
-        className="flex-row items-end justify-around border-t border-gray-200/50 bg-white/90 px-2 pt-2 dark:border-white/10 dark:bg-gray-900/90"
+        className="flex-row items-end justify-around border-t border-gray-200/50 px-2 pt-2 dark:border-white/10"
         style={{ paddingBottom: Math.max(insets.bottom, 12) }}
       >
+        <GlassSurface
+          style={StyleSheet.absoluteFill}
+          colorScheme={isDark ? "dark" : "light"}
+          tint={isDark ? "dark" : "light"}
+          intensity={80}
+        />
+
         {showHome && (
           <AnimatedPressable
             active={isHome}
             onPress={() => {
-              if (!isHome) navigation.navigate("Home");
+              if (isHome) onHomePress?.();
+              else navigation.navigate("Home");
             }}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
             activeBackgroundColor={isDark ? "rgba(30,58,138,0.5)" : "#DBEAFE"}

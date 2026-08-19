@@ -164,8 +164,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-taskly-themelight-cropped.png")}
-            style={{ width: 270, height: 80, resizeMode: "contain" }}
+            source={require("../../assets/logo-theme-light.png")}
+            style={{ width: 270, height: 84, resizeMode: "contain" }}
           />
         </View>
 
@@ -222,9 +222,8 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
           <Pressable
             onPress={handleSubmit}
             disabled={isLoading}
-            className={`w-full items-center rounded-lg py-3 ${
-              isLoading ? "bg-gray-400" : "bg-blue-600"
-            }`}
+            className="w-full items-center rounded-lg py-3"
+            style={{ backgroundColor: isLoading ? "#9CA3AF" : "#3B82F6" }}
           >
             <Text className="font-semibold text-white">
               {isLoading ? "Attendi..." : "Resetta Password"}

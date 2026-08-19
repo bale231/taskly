@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.bale231.taskly"
+      "bundleIdentifier": "com.bale231.taskly",
+      "icon": "./assets/ios-icon-taskly.png",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Taskly usa la libreria foto per aggiornare la tua immagine del profilo.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.bale231.taskly",
@@ -29,12 +34,17 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 220,
-          "backgroundColor": "#0A4F32",
+          "backgroundColor": "#FFFFFF",
           "dark": {
-            "backgroundColor": "#0A4F32"
+            "backgroundColor": "#FFFFFF"
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3fedb040-d1da-41a2-ab2d-b14f9deed9aa"
+      }
+    }
   }
 }

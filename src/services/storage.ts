@@ -19,6 +19,7 @@ const ACCESS_TOKEN = "accessToken";
 const REFRESH_TOKEN = "refreshToken";
 const PERSISTENT = "authPersistent";
 const THEME = "theme";
+const LISTS_COUNT = "lastListsCount";
 
 export async function getAccessToken(): Promise<string | null> {
   return AsyncStorage.getItem(ACCESS_TOKEN);
@@ -79,4 +80,19 @@ export async function getStoredTheme(): Promise<"light" | "dark" | null> {
 
 export async function setStoredTheme(theme: "light" | "dark"): Promise<void> {
   await AsyncStorage.setItem(THEME, theme);
+}
+
+/**
+ * Numero di liste dell'ultimo caricamento riuscito: usato solo per
+ * dimensionare lo skeleton di caricamento della Home al prossimo avvio,
+ * prima che la fetch reale risponda.
+ */
+export async function getLastListsCount(): Promise<number | null> {
+  const saved = await AsyncStorage.getItem(LISTS_COUNT);
+  const n = saved ? parseInt(saved, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export async function setLastListsCount(count: number): Promise<void> {
+  await AsyncStorage.setItem(LISTS_COUNT, String(count));
 }

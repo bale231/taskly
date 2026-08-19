@@ -14,13 +14,21 @@ import {
   ActivityIndicator,
   Image,
   Linking,
-  Modal,
   Pressable,
-  ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import Animated, {
+  interpolate,
+  interpolateColor,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   deactivateAccount,
   getCurrentUserJWT,
@@ -31,7 +39,10 @@ import {
 import { requestPasswordReset } from "../api/auth";
 import AnimatedAlert from "../components/AnimatedAlert";
 import BottomNav from "../components/BottomNav";
-import Navbar from "../components/Navbar";
+import BubbleModal from "../components/BubbleModal";
+import GlassSurface from "../components/GlassSurface";
+import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
+import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
@@ -59,9 +70,16 @@ const AVATAR_BASE_URL = "https://bale231.pythonanywhere.com";
  * viene implementata.
  */
 export default function ProfileScreen({ navigation }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  const insets = useSafeAreaInsets();
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState<Alert>(null);
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -75,6 +93,34 @@ export default function ProfileScreen({ navigation }: Props) {
 
   const [showResetModal, setShowResetModal] = useState(false);
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+
+  // Transizione smooth quando si attiva/disattiva "Modifica profilo": prima
+  // gli input e il bottone Salva passavano da disabilitati ad abilitati di
+  // scatto (solo cambio di className), ora sfumano.
+  const editProgress = useSharedValue(0);
+  useEffect(() => {
+    editProgress.value = withTiming(editMode ? 1 : 0, { duration: 220 });
+  }, [editMode, editProgress]);
+
+  const fieldStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(editProgress.value, [0, 1], [0.6, 1]),
+  }));
+
+  const saveButtonStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      editProgress.value,
+      [0, 1],
+      [isDark ? "#374151" : "#E5E7EB", isDark ? "rgba(22,163,74,0.2)" : "rgba(34,197,94,0.2)"]
+    ),
+  }));
+
+  const saveTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      editProgress.value,
+      [0, 1],
+      ["#9CA3AF", isDark ? "#4ADE80" : "#16A34A"]
+    ),
+  }));
 
   const showAlert = (message: string, type: "success" | "error" | "warning") =>
     setAlert({ type, message });
@@ -246,17 +292,19 @@ export default function ProfileScreen({ navigation }: Props) {
 
   return (
     <View className="flex-1 bg-gray-100 dark:bg-gray-900">
-      <Navbar />
+      <Navbar scrollY={scrollY} />
 
-      {alert && (
-        <AnimatedAlert
-          type={alert.type}
-          message={alert.message}
-          onClose={() => setAlert(null)}
-        />
-      )}
+      <AnimatedAlert alert={alert} onClose={() => setAlert(null)} />
 
-      <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 120 }}>
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={{
+          padding: 24,
+          paddingTop: NAVBAR_BASE_HEIGHT + insets.top + 24,
+          paddingBottom: 120,
+        }}
+      >
         <View className="rounded-xl border border-gray-200/50 bg-white/70 p-6 dark:border-white/20 dark:bg-gray-800/70">
           <Text className="mb-6 text-center text-2xl font-bold text-gray-900 dark:text-white">
             Profilo
@@ -338,7 +386,7 @@ export default function ProfileScreen({ navigation }: Props) {
           </View>
 
           {/* Username / Email */}
-          <View className="mb-3">
+          <Animated.View style={fieldStyle} className="mb-3">
             <Text className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
               Username
             </Text>
@@ -346,13 +394,11 @@ export default function ProfileScreen({ navigation }: Props) {
               value={username}
               onChangeText={setUsername}
               editable={editMode}
-              className={`rounded-lg border border-gray-200/50 px-4 py-3 text-gray-900 dark:border-white/20 dark:text-white ${
-                editMode ? "bg-white dark:bg-gray-700" : "bg-white/50 opacity-60 dark:bg-gray-700/50"
-              }`}
+              className="rounded-lg border border-gray-200/50 bg-white px-4 py-3 text-gray-900 dark:border-white/20 dark:bg-gray-700 dark:text-white"
             />
-          </View>
+          </Animated.View>
 
-          <View className="mb-3">
+          <Animated.View style={fieldStyle} className="mb-3">
             <Text className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
               Email
             </Text>
@@ -362,11 +408,9 @@ export default function ProfileScreen({ navigation }: Props) {
               editable={editMode}
               keyboardType="email-address"
               autoCapitalize="none"
-              className={`rounded-lg border border-gray-200/50 px-4 py-3 text-gray-900 dark:border-white/20 dark:text-white ${
-                editMode ? "bg-white dark:bg-gray-700" : "bg-white/50 opacity-60 dark:bg-gray-700/50"
-              }`}
+              className="rounded-lg border border-gray-200/50 bg-white px-4 py-3 text-gray-900 dark:border-white/20 dark:bg-gray-700 dark:text-white"
             />
-          </View>
+          </Animated.View>
 
           <View className="mb-4">
             <Text className="mb-1 text-xs font-medium text-gray-500 dark:text-gray-400">
@@ -390,15 +434,12 @@ export default function ProfileScreen({ navigation }: Props) {
           <Pressable
             onPress={handleSave}
             disabled={!editMode}
-            className={`mb-4 items-center rounded-lg py-3 ${
-              editMode ? "bg-green-500/20 dark:bg-green-600/20" : "bg-gray-200 dark:bg-gray-700"
-            }`}
+            className="mb-4 items-center rounded-lg py-3"
           >
-            <Text
-              className={`font-medium ${editMode ? "text-green-600 dark:text-green-400" : "text-gray-500"}`}
-            >
+            <Animated.View style={[StyleSheet.absoluteFill, saveButtonStyle, { borderRadius: 8 }]} />
+            <Animated.Text style={[{ fontWeight: "500" }, saveTextStyle]}>
               Salva modifiche
-            </Text>
+            </Animated.Text>
           </Pressable>
 
           <Pressable
@@ -428,7 +469,7 @@ export default function ProfileScreen({ navigation }: Props) {
             <Text className="text-sm text-gray-500 dark:text-gray-400">Visita il nostro sito web</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <BottomNav
         showHome
@@ -440,65 +481,81 @@ export default function ProfileScreen({ navigation }: Props) {
       />
 
       {/* Modale reset password */}
-      <Modal visible={showResetModal} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/30 p-4">
-          <View className="w-full max-w-xs rounded-lg border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
-            <View className="mb-4 items-center">
-              <View className="rounded-full bg-blue-100 p-3 dark:bg-blue-900">
-                <Key size={24} color="#2563EB" />
-              </View>
-            </View>
-            <Text className="mb-2 text-center text-lg font-semibold text-gray-900 dark:text-white">
-              Reset Password
-            </Text>
-            <Text className="mb-6 text-center text-sm text-gray-700 dark:text-gray-300">
-              Ti invieremo un&apos;email con un link per resettare la password.
-            </Text>
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={() => setShowResetModal(false)}
-                className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
-              >
-                <Text className="text-center text-gray-800 dark:text-white">Annulla</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleRequestPasswordReset}
-                className="flex-1 rounded-lg bg-blue-600 py-2.5"
-              >
-                <Text className="text-center text-white">Invia email</Text>
-              </Pressable>
+      <BubbleModal
+        visible={showResetModal}
+        onRequestClose={() => setShowResetModal(false)}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
+          <View className="mb-4 items-center">
+            <View className="rounded-full bg-blue-100 p-3 dark:bg-blue-900">
+              <Key size={24} color="#2563EB" />
             </View>
           </View>
+          <Text className="mb-2 text-center text-lg font-semibold text-gray-900 dark:text-white">
+            Reset Password
+          </Text>
+          <Text className="mb-6 text-center text-sm text-gray-700 dark:text-gray-300">
+            Ti invieremo un&apos;email con un link per resettare la password.
+          </Text>
+          <View className="flex-row gap-3">
+            <Pressable
+              onPress={() => setShowResetModal(false)}
+              className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
+            >
+              <Text className="text-center text-gray-800 dark:text-white">Annulla</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleRequestPasswordReset}
+              className="flex-1 rounded-lg bg-blue-600 py-2.5"
+            >
+              <Text className="text-center text-white">Invia email</Text>
+            </Pressable>
+          </View>
         </View>
-      </Modal>
+      </BubbleModal>
 
       {/* Modale conferma disattivazione */}
-      <Modal visible={showDeactivateModal} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/30 p-4">
-          <View className="w-full max-w-xs rounded-lg border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
-            <Text className="mb-4 text-center text-lg font-semibold text-gray-900 dark:text-white">
-              Conferma disattivazione
-            </Text>
-            <Text className="mb-6 text-center text-sm text-gray-700 dark:text-gray-300">
-              Sei sicuro di voler disattivare il tuo account?
-            </Text>
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={() => setShowDeactivateModal(false)}
-                className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
-              >
-                <Text className="text-center text-gray-800 dark:text-white">Annulla</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleDeactivate}
-                className="flex-1 rounded-lg bg-red-600 py-2.5"
-              >
-                <Text className="text-center text-white">Conferma</Text>
-              </Pressable>
-            </View>
+      <BubbleModal
+        visible={showDeactivateModal}
+        onRequestClose={() => setShowDeactivateModal(false)}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
+          <Text className="mb-4 text-center text-lg font-semibold text-gray-900 dark:text-white">
+            Conferma disattivazione
+          </Text>
+          <Text className="mb-6 text-center text-sm text-gray-700 dark:text-gray-300">
+            Sei sicuro di voler disattivare il tuo account?
+          </Text>
+          <View className="flex-row gap-3">
+            <Pressable
+              onPress={() => setShowDeactivateModal(false)}
+              className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
+            >
+              <Text className="text-center text-gray-800 dark:text-white">Annulla</Text>
+            </Pressable>
+            <Pressable
+              onPress={handleDeactivate}
+              className="flex-1 rounded-lg bg-red-600 py-2.5"
+            >
+              <Text className="text-center text-white">Conferma</Text>
+            </Pressable>
           </View>
         </View>
-      </Modal>
+      </BubbleModal>
     </View>
   );
 }

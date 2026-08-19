@@ -31,11 +31,11 @@ export default function NotificationBadge() {
 
   return (
     <Pressable onPress={() => setShowPopup(!showPopup)} className="relative p-1">
-      <Bell size={24} color="#2563EB" />
+      <Bell size={30} color="#2563EB" />
       {unreadCount > 0 && (
         <Animated.View
           style={badgeStyle}
-          className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full bg-red-500"
+          className="absolute -right-1 -top-1 h-6 w-6 items-center justify-center rounded-full bg-red-500"
         >
           <Text className="text-xs font-bold text-white">
             {unreadCount > 9 ? "9+" : unreadCount}

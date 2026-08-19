@@ -33,6 +33,18 @@ export default function FloatingLabelInput({
 }: Props) {
   const [focused, setFocused] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const eyeScale = useRef(new Animated.Value(1)).current;
+
+  const toggleRevealed = () => {
+    eyeScale.setValue(0.7);
+    Animated.spring(eyeScale, {
+      toValue: 1,
+      friction: 4,
+      tension: 200,
+      useNativeDriver: true,
+    }).start();
+    setRevealed((prev) => !prev);
+  };
 
   // La label sta in alto quando il campo è attivo o già compilato.
   const floating = focused || Boolean(value);
@@ -126,16 +138,18 @@ export default function FloatingLabelInput({
 
         {isPassword && (
           <Pressable
-            onPress={() => setRevealed((prev) => !prev)}
+            onPress={toggleRevealed}
             hitSlop={8}
             className="absolute right-3"
             style={{ top: 20 }}
           >
-            {revealed ? (
-              <EyeOff size={18} color="#6B7280" />
-            ) : (
-              <Eye size={18} color="#6B7280" />
-            )}
+            <Animated.View style={{ transform: [{ scale: eyeScale }] }}>
+              {revealed ? (
+                <EyeOff size={18} color="#6B7280" />
+              ) : (
+                <Eye size={18} color="#6B7280" />
+              )}
+            </Animated.View>
           </Pressable>
         )}
       </View>

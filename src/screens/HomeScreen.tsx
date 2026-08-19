@@ -1,12 +1,15 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   Archive,
   ArchiveRestore,
   Pencil,
   Plus,
   Search,
+  Share2,
   Trash,
+  UserCheck,
+  UserPlus,
   Users,
   X,
 } from "lucide-react-native";
@@ -16,10 +19,19 @@ import {
   Dimensions,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  FadeOutUp,
+  useAnimatedScrollHandler,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   archiveList,
@@ -42,10 +54,16 @@ import AnimatedAlert from "../components/AnimatedAlert";
 import AnimatedPressable from "../components/AnimatedPressable";
 import BottomNav from "../components/BottomNav";
 import BubbleModal from "../components/BubbleModal";
-import Navbar from "../components/Navbar";
+import GlassSurface from "../components/GlassSurface";
+import { GlassBottomSheetBackdrop, GlassBottomSheetBackground } from "../components/GlassBottomSheet";
+import ListCardSkeleton from "../components/ListCardSkeleton";
+import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
+import ShareListModal from "../components/ShareListModal";
 import SwipeableRow from "../components/SwipeableRow";
+import WiggleView from "../components/WiggleView";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
+import { getLastListsCount, setLastListsCount } from "../services/storage";
 import type { Category, ListSortOption, TodoList } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
@@ -66,18 +84,16 @@ export default function HomeScreen({ navigation }: Props) {
   const isDark = theme === "dark";
   const insets = useSafeAreaInsets();
   const categoryPickerRef = useRef<BottomSheetModal>(null);
+  const scrollViewRef = useRef<Animated.ScrollView>(null);
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
 
   const [user, setUser] = useState<{ id: number } | null>(null);
   const [lists, setLists] = useState<TodoList[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
-  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
-
-  useEffect(() => {
-    if (categoryPickerOpen) categoryPickerRef.current?.present();
-    else categoryPickerRef.current?.dismiss();
-  }, [categoryPickerOpen]);
-
   const [sortOption, setSortOption] = useState<ListSortOption>("created");
   const [categorySortAlpha, setCategorySortAlpha] = useState(false);
 
@@ -86,8 +102,23 @@ export default function HomeScreen({ navigation }: Props) {
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<TextInput>(null);
+
+  // `autoFocus` non è affidabile quando il campo compare dentro una View
+  // che sta animando l'ingresso (`entering`): il focus va chiesto a mano
+  // dopo il mount, altrimenti la tastiera non si apre.
+  useEffect(() => {
+    if (searchOpen) {
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [searchOpen]);
 
   const [isLoadingLists, setIsLoadingLists] = useState(true);
+  // Quante ListCardSkeleton mostrare mentre isLoadingLists è true: il numero
+  // di liste dell'ultimo caricamento riuscito (persistito), così lo skeleton
+  // non è mai un numero a caso di placeholder scollegato dal contenuto reale.
+  const [skeletonCount, setSkeletonCount] = useState(3);
   const [alert, setAlert] = useState<Alert>(null);
 
   // Modale lista
@@ -103,12 +134,16 @@ export default function HomeScreen({ navigation }: Props) {
   const [catName, setCatName] = useState("");
 
   const [showDeleteConfirmId, setShowDeleteConfirmId] = useState<number | null>(null);
+  const [shareListTarget, setShareListTarget] = useState<TodoList | null>(null);
 
   const fetchLists = useCallback(async () => {
     setIsLoadingLists(true);
     try {
       const data = await fetchAllLists();
-      if (Array.isArray(data)) setLists(data);
+      if (Array.isArray(data)) {
+        setLists(data);
+        if (data.length > 0) setLastListsCount(data.length);
+      }
     } catch (err) {
       console.error("Errore nel caricamento liste:", err);
     } finally {
@@ -125,6 +160,12 @@ export default function HomeScreen({ navigation }: Props) {
       console.error("Errore caricamento categorie:", err);
       return [];
     }
+  }, []);
+
+  useEffect(() => {
+    getLastListsCount().then((n) => {
+      if (n) setSkeletonCount(n);
+    });
   }, []);
 
   useEffect(() => {
@@ -266,7 +307,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   const handleSelectCategory = async (cat: Category | null) => {
     setSelectedCategory(cat);
-    setCategoryPickerOpen(false);
+    categoryPickerRef.current?.dismiss();
     try {
       await saveSelectedCategory(cat ? cat.id : null);
     } catch (err) {
@@ -353,27 +394,45 @@ export default function HomeScreen({ navigation }: Props) {
     );
   }
 
+  // Chiude la ricerca al tap in un punto qualsiasi dello schermo, non solo
+  // sulla X: un Pressable esterno che avvolge tutto il contenuto, il cui
+  // onPress scatta solo quando il tocco non è già stato gestito da un
+  // Pressable/gesture più interno (card, bottoni, ecc.) — comportamento di
+  // default in RN, non serve stopPropagation esplicito.
+  const closeSearchOnOutsideTap = searchOpen
+    ? () => {
+        setSearchOpen(false);
+        setSearchQuery("");
+      }
+    : undefined;
+
   return (
     <View className="flex-1 bg-gray-100 dark:bg-gray-900">
-      <Navbar />
+      <Navbar scrollY={scrollY} />
 
-      {alert && (
-        <AnimatedAlert
-          type={alert.type}
-          message={alert.message}
-          onClose={() => setAlert(null)}
-        />
-      )}
+      <AnimatedAlert alert={alert} onClose={() => setAlert(null)} />
 
-      <ScrollView
+      <Pressable className="flex-1" onPress={closeSearchOnOutsideTap}>
+      <Animated.ScrollView
+        ref={scrollViewRef}
         className="flex-1"
-        contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
+        contentContainerStyle={{
+          padding: 24,
+          paddingTop: NAVBAR_BASE_HEIGHT + insets.top + 24,
+          paddingBottom: 120,
+        }}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
         {searchOpen && (
-          <View className="mb-4 flex-row items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
+          <Animated.View
+            entering={FadeInDown.duration(220)}
+            exiting={FadeOutUp.duration(160)}
+            className="mb-4 flex-row items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800"
+          >
             <Search size={18} color="#6B7280" />
             <TextInput
-              autoFocus
+              ref={searchInputRef}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholder="Cerca liste o todo..."
@@ -387,8 +446,35 @@ export default function HomeScreen({ navigation }: Props) {
             >
               <X size={18} color="#6B7280" />
             </Pressable>
-          </View>
+          </Animated.View>
         )}
+
+        {/* Azioni rapide: amici */}
+        <View className="mb-4 flex-row gap-3">
+          <Pressable
+            onPress={() => navigation.navigate("FindUsers")}
+            accessibilityLabel="Trova Utenti"
+            className="flex-1 h-14 items-center justify-center rounded-2xl bg-blue-500"
+          >
+            <Users size={22} color="#FFFFFF" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => navigation.navigate("FriendRequests")}
+            accessibilityLabel="Richieste di Amicizia"
+            className="flex-1 h-14 items-center justify-center rounded-2xl bg-green-500"
+          >
+            <UserPlus size={22} color="#FFFFFF" />
+          </Pressable>
+
+          <Pressable
+            onPress={() => navigation.navigate("Friends")}
+            accessibilityLabel="I Miei Amici"
+            className="flex-1 h-14 items-center justify-center rounded-2xl bg-purple-500"
+          >
+            <UserCheck size={22} color="#FFFFFF" />
+          </Pressable>
+        </View>
 
         {/* Azioni rapide: categoria, archivio, cerca */}
         <View className="mb-4 flex-row gap-3">
@@ -398,27 +484,25 @@ export default function HomeScreen({ navigation }: Props) {
               setEditCatId(null);
               setCatName("");
             }}
-            className="flex-1 flex-row items-center justify-center gap-2 rounded-xl bg-yellow-500 py-3"
+            accessibilityLabel="Nuova Categoria"
+            className="flex-1 h-14 items-center justify-center rounded-2xl bg-yellow-500"
           >
-            <Plus size={18} color="#FFFFFF" />
-            <Text className="text-sm font-medium text-white">Categoria</Text>
+            <Plus size={22} color="#FFFFFF" />
           </Pressable>
 
           <AnimatedPressable
             active={showArchived}
             onPress={() => setShowArchived((prev) => !prev)}
-            className={`flex-1 flex-row items-center justify-center gap-2 rounded-xl py-3 ${
+            accessibilityLabel={showArchived ? "Mostra attive" : "Mostra archivio"}
+            className={`flex-1 h-14 items-center justify-center rounded-2xl ${
               showArchived ? "bg-orange-500" : "bg-gray-500"
             }`}
           >
             {showArchived ? (
-              <ArchiveRestore size={18} color="#FFFFFF" />
+              <ArchiveRestore size={22} color="#FFFFFF" />
             ) : (
-              <Archive size={18} color="#FFFFFF" />
+              <Archive size={22} color="#FFFFFF" />
             )}
-            <Text className="text-sm font-medium text-white">
-              {showArchived ? "Attive" : "Archivio"}
-            </Text>
             {archivedCount > 0 && !showArchived && (
               <View className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full bg-orange-600">
                 <Text className="text-xs text-white">{archivedCount}</Text>
@@ -429,30 +513,52 @@ export default function HomeScreen({ navigation }: Props) {
           {!searchOpen && (
             <Pressable
               onPress={() => setSearchOpen(true)}
-              className="flex-1 flex-row items-center justify-center gap-2 rounded-xl bg-gray-600 py-3"
+              accessibilityLabel="Cerca"
+              className="flex-1 h-14 items-center justify-center rounded-2xl bg-gray-600"
             >
-              <Search size={18} color="#FFFFFF" />
-              <Text className="text-sm font-medium text-white">Cerca</Text>
+              <Search size={22} color="#FFFFFF" />
             </Pressable>
           )}
         </View>
 
         {/* Selettore categoria */}
-        <Pressable
-          onPress={() => setCategoryPickerOpen(true)}
-          className="mb-6 flex-row items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-3 dark:border-gray-700 dark:bg-gray-800"
-        >
-          <Text className="font-medium text-gray-800 dark:text-gray-200">
-            {selectedCategory ? selectedCategory.name : "Tutte le categorie"}
-          </Text>
-        </Pressable>
+        <View className="mb-6 flex-row gap-2">
+          <Pressable
+            onPress={() => categoryPickerRef.current?.present()}
+            className="flex-1 flex-row items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-3 dark:border-gray-700 dark:bg-gray-800"
+          >
+            <Text className="font-medium text-gray-800 dark:text-gray-200">
+              {selectedCategory ? selectedCategory.name : "Tutte le categorie"}
+            </Text>
+          </Pressable>
+
+          {selectedCategory && (
+            <Pressable
+              onPress={() => {
+                setEditCatId(selectedCategory.id);
+                setCatName(selectedCategory.name);
+                setShowCatForm(true);
+              }}
+              className="items-center justify-center rounded-xl border border-gray-200 bg-white px-4 dark:border-gray-700 dark:bg-gray-800"
+            >
+              <Pencil size={18} color="#6B7280" />
+            </Pressable>
+          )}
+        </View>
 
         {isLoadingLists ? (
-          <View className="mt-8 items-center">
-            <ActivityIndicator size="large" color="#3B82F6" />
+          <View className="gap-4">
+            {Array.from({ length: skeletonCount }).map((_, i) => (
+              <ListCardSkeleton key={i} />
+            ))}
           </View>
         ) : sortedLists.length === 0 ? (
-          <View className="mt-6 rounded-xl border border-gray-200/50 bg-white/70 p-6 dark:border-white/20 dark:bg-gray-800/70">
+          <Animated.View
+            key={`empty-${showArchived}`}
+            entering={FadeIn.duration(220)}
+            exiting={FadeOut.duration(160)}
+            className="mt-6 rounded-xl border border-gray-200/50 bg-white/70 p-6 dark:border-white/20 dark:bg-gray-800/70"
+          >
             <Text className="text-center text-lg text-gray-700 dark:text-gray-300">
               {searchQuery.trim()
                 ? `Nessun risultato per "${searchQuery}"`
@@ -460,9 +566,10 @@ export default function HomeScreen({ navigation }: Props) {
                   ? "Qui andranno le tue ToDo Archiviate"
                   : "Qui andranno le tue liste ToDo"}
             </Text>
-          </View>
+          </Animated.View>
         ) : (
-          groupedLists.map((group) => (
+          <Animated.View key={`lists-${showArchived}`} entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)}>
+            {groupedLists.map((group) => (
             <View key={group.categoryName} className="mb-8">
               <Text className="mb-4 text-2xl font-bold text-gray-800 dark:text-gray-200">
                 {group.categoryName}
@@ -494,52 +601,87 @@ export default function HomeScreen({ navigation }: Props) {
                           handleArchiveList(list.id, list.is_archived || false),
                       }}
                     >
-                      <Pressable
-                        onPress={() => navigation.navigate("ListDetail", { listId: list.id })}
-                        className={`min-h-[110px] justify-center rounded-xl border-l-4 border border-gray-200/50 p-4 dark:border-white/20 ${CARD_BORDER[list.color] ?? CARD_BORDER.blue}`}
-                      >
-                        {list.is_shared && list.shared_by && (
-                          <View className="mb-1 flex-row items-center gap-1 self-start rounded-md bg-purple-100 px-2 py-1 dark:bg-purple-900/60">
-                            <Users size={12} color="#7C3AED" />
-                            <Text className="text-xs text-purple-700 dark:text-purple-300">
-                              Condivisa da {list.shared_by.full_name}
-                            </Text>
-                          </View>
-                        )}
-                        <Text className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
-                          {list.name}
-                        </Text>
-                        <Text className="text-sm text-gray-600 dark:text-gray-300">
-                          {list.todos.length === 0
-                            ? "Nessuna ToDo"
-                            : `${pending} ToDo da completare, ${completed} completate.`}
-                        </Text>
+                      <WiggleView enabled={editMode && list.is_owner !== false}>
+                        <Pressable
+                          onPress={() =>
+                            navigation.navigate("ListDetail", {
+                              listId: list.id,
+                              todosCount: list.todos.length,
+                            })
+                          }
+                          className={`min-h-[110px] justify-center rounded-xl border-l-4 border border-gray-200/50 p-4 dark:border-white/20 ${CARD_BORDER[list.color] ?? CARD_BORDER.blue}`}
+                        >
+                          {list.is_shared && list.shared_by && (
+                            <View className="mb-1 flex-row items-center gap-1 self-start rounded-md bg-purple-100 px-2 py-1 dark:bg-purple-900/60">
+                              <Users size={12} color="#7C3AED" />
+                              <Text className="text-xs text-purple-700 dark:text-purple-300">
+                                Condivisa da {list.shared_by.full_name}
+                              </Text>
+                            </View>
+                          )}
+                          <Text className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
+                            {list.name}
+                          </Text>
+                          <Text className="text-sm text-gray-600 dark:text-gray-300">
+                            {list.todos.length === 0
+                              ? "Nessuna ToDo"
+                              : `${pending} ToDo da completare, ${completed} completate.`}
+                          </Text>
 
-                        {editMode && list.is_owner !== false && (
-                          <View className="mt-3 flex-row gap-2 self-end">
-                            <Pressable
-                              onPress={() => handleEditList(list)}
-                              className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/60"
+                          {editMode && list.is_owner !== false && (
+                            <Animated.View
+                              entering={FadeIn.duration(180)}
+                              exiting={FadeOut.duration(140)}
+                              className="mt-3 flex-row gap-2 self-end"
                             >
-                              <Pencil size={16} color="#2563EB" />
-                            </Pressable>
-                            <Pressable
-                              onPress={() => setShowDeleteConfirmId(list.id)}
-                              className="rounded-lg bg-red-100 p-2 dark:bg-red-900/60"
-                            >
-                              <Trash size={16} color="#DC2626" />
-                            </Pressable>
-                          </View>
-                        )}
-                      </Pressable>
+                              <Pressable
+                                onPress={() => setShareListTarget(list)}
+                                className="rounded-lg bg-purple-100/80 p-2 dark:bg-purple-900/60"
+                              >
+                                <Share2 size={16} color="#7C3AED" />
+                              </Pressable>
+                              <Pressable
+                                onPress={() =>
+                                  handleArchiveList(list.id, list.is_archived || false)
+                                }
+                                className={`rounded-lg p-2 ${
+                                  list.is_archived
+                                    ? "bg-green-100 dark:bg-green-900/60"
+                                    : "bg-orange-100 dark:bg-orange-900/60"
+                                }`}
+                              >
+                                {list.is_archived ? (
+                                  <ArchiveRestore size={16} color="#16A34A" />
+                                ) : (
+                                  <Archive size={16} color="#EA580C" />
+                                )}
+                              </Pressable>
+                              <Pressable
+                                onPress={() => handleEditList(list)}
+                                className="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/60"
+                              >
+                                <Pencil size={16} color="#2563EB" />
+                              </Pressable>
+                              <Pressable
+                                onPress={() => setShowDeleteConfirmId(list.id)}
+                                className="rounded-lg bg-red-100 p-2 dark:bg-red-900/60"
+                              >
+                                <Trash size={16} color="#DC2626" />
+                              </Pressable>
+                            </Animated.View>
+                          )}
+                        </Pressable>
+                      </WiggleView>
                     </SwipeableRow>
                   );
                 })}
               </View>
             </View>
-          ))
+          ))}
+          </Animated.View>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      </Pressable>
 
       <BottomNav
         showHome
@@ -549,6 +691,7 @@ export default function HomeScreen({ navigation }: Props) {
         showSort
         editMode={editMode}
         sortOption={sortOption}
+        onHomePress={() => scrollViewRef.current?.scrollTo({ y: 0, animated: true })}
         onToggleEdit={() => {
           const next = !editMode;
           setEditMode(next);
@@ -582,7 +725,13 @@ export default function HomeScreen({ navigation }: Props) {
         }}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
             <Text className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
               {editListId !== null ? "Modifica Lista" : "Nuova Lista"}
             </Text>
@@ -674,7 +823,13 @@ export default function HomeScreen({ navigation }: Props) {
         }}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
             <Text className="mb-4 text-xl font-semibold text-gray-900 dark:text-white">
               {editCatId ? "Modifica Categoria" : "Nuova Categoria"}
             </Text>
@@ -709,36 +864,56 @@ export default function HomeScreen({ navigation }: Props) {
       {/* Selettore categoria: bottom sheet nativo con gesture di trascinamento */}
       <BottomSheetModal
         ref={categoryPickerRef}
-        onDismiss={() => setCategoryPickerOpen(false)}
         enableDynamicSizing
         maxDynamicContentSize={Dimensions.get("window").height - insets.top - 40}
-        backgroundStyle={{ backgroundColor: isDark ? "#111827" : "#FFFFFF" }}
+        backgroundComponent={GlassBottomSheetBackground}
         handleIndicatorStyle={{ backgroundColor: isDark ? "#4B5563" : "#D1D5DB" }}
         backdropComponent={(props) => (
-          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.3} />
+          <GlassBottomSheetBackdrop {...props} onClose={() => categoryPickerRef.current?.dismiss()} />
         )}
       >
         <BottomSheetScrollView
           style={{ paddingHorizontal: 16 }}
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 16 }}
         >
+          <Text className="mb-3 text-center text-lg font-semibold text-gray-900 dark:text-white">
+            Filtra per categoria
+          </Text>
+
           <Pressable
             onPress={() => handleSelectCategory(null)}
-            className="border-b border-gray-100 py-3 dark:border-gray-800"
+            className={`mb-3 rounded-2xl px-6 py-5 ${
+              selectedCategory === null ? "bg-blue-600" : "bg-gray-100 dark:bg-gray-800"
+            }`}
           >
-            <Text className="text-center text-gray-900 dark:text-white">
+            <Text
+              className={`text-center text-lg font-medium ${
+                selectedCategory === null ? "text-white" : "text-gray-800 dark:text-gray-200"
+              }`}
+            >
               Tutte le categorie
             </Text>
           </Pressable>
-          {categories.map((cat) => (
-            <Pressable
-              key={cat.id}
-              onPress={() => handleSelectCategory(cat)}
-              className="border-b border-gray-100 py-3 dark:border-gray-800"
-            >
-              <Text className="text-center text-gray-900 dark:text-white">{cat.name}</Text>
-            </Pressable>
-          ))}
+          {categories.map((cat) => {
+            const selected = selectedCategory?.id === cat.id;
+            return (
+              <Pressable
+                key={cat.id}
+                onPress={() => handleSelectCategory(cat)}
+                className={`mb-3 rounded-2xl px-6 py-5 ${
+                  selected ? "bg-blue-600" : "bg-gray-100 dark:bg-gray-800"
+                }`}
+              >
+                <Text
+                  className={`text-center text-lg font-medium ${
+                    selected ? "text-white" : "text-gray-800 dark:text-gray-200"
+                  }`}
+                >
+                  {cat.name}
+                </Text>
+              </Pressable>
+            );
+          })}
         </BottomSheetScrollView>
       </BottomSheetModal>
 
@@ -748,7 +923,13 @@ export default function HomeScreen({ navigation }: Props) {
         onRequestClose={() => setShowDeleteConfirmId(null)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full max-w-xs rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900">
+        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
           <Text className="mb-4 text-lg font-semibold text-gray-900 dark:text-white">
             Confermi eliminazione?
           </Text>
@@ -771,6 +952,13 @@ export default function HomeScreen({ navigation }: Props) {
           </View>
         </View>
       </BubbleModal>
+
+      <ShareListModal
+        isOpen={shareListTarget !== null}
+        onClose={() => setShareListTarget(null)}
+        listId={shareListTarget?.id ?? 0}
+        listName={shareListTarget?.name ?? ""}
+      />
     </View>
   );
 }

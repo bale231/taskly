@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -11,19 +11,22 @@ import Animated, {
 /**
  * Unifica SwipeableListItem e SwipeableTodoItem della webapp (erano quasi
  * identici, differivano solo nelle azioni disponibili). Là lo swipe era
- * gestito a mano con onMouseDown/onTouchMove + gsap.quickTo; qui lo stesso
- * gesto usa react-native-gesture-handler + Reanimated, l'accoppiata
- * idiomatica per gesti fluidi in RN.
+ * gestito a mano con onMouseDown/onTouchMove + gsap.quickTo, e scattava
+ * subito al rilascio oltre soglia; qui invece segue il comportamento nativo
+ * iOS (Mail, Promemoria): lo swipe apre e la riga resta ferma alla
+ * larghezza dell'azione finché non tocchi il bottone (la esegue) o
+ * altrove (richiude senza fare nulla).
  */
-const ACTION_WIDTH = 60; // soglia di swipe per attivare l'azione
-const MAX_TRANSLATE = ACTION_WIDTH * 1.2;
+const ACTION_WIDTH = 76; // larghezza a cui la riga resta ancorata quando aperta
+const MAX_TRANSLATE = ACTION_WIDTH * 1.3; // overscroll elastico oltre l'ancoraggio
+const OPEN_THRESHOLD = ACTION_WIDTH / 2; // superata questa soglia, si ancora aperta al rilascio
 
 interface SwipeAction {
   icon: ReactNode;
   backgroundClassName: string;
   /** Se assente, l'azione su questo lato è disabilitata (nessun indicatore, nessun trigger). */
   onTrigger?: () => void;
-  /** Se true, lo swipe apre una conferma invece di eseguire onTrigger direttamente. */
+  /** Se true, il tap sul bottone chiede conferma al genitore invece di eseguire onTrigger direttamente. */
   confirm?: {
     title: string;
     message: string;
@@ -37,6 +40,15 @@ interface SwipeableRowProps {
   /** Azione mostrata/attivata con swipe verso sinistra (rivela il lato destro). */
   rightAction?: SwipeAction;
   disabled?: boolean;
+  /**
+   * Chiamato quando un'azione con `confirm` viene attivata dal tap sul
+   * bottone rivelato: il genitore mostra un'unica modale condivisa invece
+   * che ogni riga ne monti una propria. Un <Modal> nativo per riga (anche
+   * con visible={false}) è costoso da montare su iOS ed era la causa del
+   * lag di ~2s sui tap in questa schermata: bastavano una decina di righe
+   * visibili in una FlatList per saturare il thread nativo ad ogni commit.
+   */
+  onConfirmNeeded?: (confirm: { title: string; message: string; onConfirm: () => void }) => void;
 }
 
 export default function SwipeableRow({
@@ -44,22 +56,37 @@ export default function SwipeableRow({
   leftAction,
   rightAction,
   disabled = false,
+  onConfirmNeeded,
 }: SwipeableRowProps) {
   const translateX = useSharedValue(0);
-  const [confirmAction, setConfirmAction] = useState<SwipeAction | null>(null);
+  // "closed" | "left" | "right": quale lato è ancorato aperto, per sapere
+  // dove far tornare la riga quando la si richiude col tap altrove.
+  const [openSide, setOpenSide] = useState<"closed" | "left" | "right">("closed");
 
-  // Chiamata da runOnJS: deve ricevere solo dati semplici, non l'intero
-  // oggetto SwipeAction (contiene icon: ReactNode, cioè un FiberNode che
-  // il worklet non può copiare dal thread UI a quello JS).
-  const handleSwipeResolved = (side: "left" | "right") => {
+  const runTrigger = (side: "left" | "right") => {
     const action = side === "left" ? leftAction : rightAction;
     if (!action?.onTrigger) return;
+    translateX.value = withSpring(0, { damping: 20, stiffness: 220, overshootClamping: true });
+    setOpenSide("closed");
     if (action.confirm) {
-      setConfirmAction(action);
+      onConfirmNeeded?.({ ...action.confirm, onConfirm: action.onTrigger });
     } else {
       action.onTrigger();
     }
   };
+
+  const close = () => {
+    translateX.value = withSpring(0, { damping: 20, stiffness: 220, overshootClamping: true });
+    setOpenSide("closed");
+  };
+
+  // Il worklet di .onEnd() gira sullo UI thread e cattura per closure tutto
+  // ciò che referenzia: passargli leftAction/rightAction (che contengono
+  // `icon: ReactNode`, cioè un FiberNode) fa fallire la serializzazione
+  // verso quel thread. Si estraggono qui solo i due booleani primitivi
+  // che servono davvero dentro il worklet.
+  const hasLeftTrigger = Boolean(leftAction?.onTrigger);
+  const hasRightTrigger = Boolean(rightAction?.onTrigger);
 
   const pan = Gesture.Pan()
     .enabled(!disabled)
@@ -69,19 +96,24 @@ export default function SwipeableRow({
     .activeOffsetX([-10, 10])
     .failOffsetY([-10, 10])
     .onUpdate((e) => {
-      const clamped = Math.max(
-        -MAX_TRANSLATE,
-        Math.min(MAX_TRANSLATE, e.translationX)
-      );
-      translateX.value = clamped;
+      // Parte sempre dalla posizione corrente (0 se chiusa, ±ACTION_WIDTH
+      // se già ancorata aperta), così un secondo swipe sopra una riga già
+      // aperta la sposta in modo continuo invece di saltare da 0.
+      const base = openSide === "left" ? ACTION_WIDTH : openSide === "right" ? -ACTION_WIDTH : 0;
+      const next = base + e.translationX;
+      translateX.value = Math.max(-MAX_TRANSLATE, Math.min(MAX_TRANSLATE, next));
     })
-    .onEnd((e) => {
-      translateX.value = withSpring(0, { damping: 20, stiffness: 200 });
-
-      if (e.translationX > ACTION_WIDTH) {
-        runOnJS(handleSwipeResolved)("left");
-      } else if (e.translationX < -ACTION_WIDTH) {
-        runOnJS(handleSwipeResolved)("right");
+    .onEnd(() => {
+      const value = translateX.value;
+      if (value > OPEN_THRESHOLD && hasLeftTrigger) {
+        translateX.value = withSpring(ACTION_WIDTH, { damping: 22, stiffness: 260 });
+        runOnJS(setOpenSide)("left");
+      } else if (value < -OPEN_THRESHOLD && hasRightTrigger) {
+        translateX.value = withSpring(-ACTION_WIDTH, { damping: 22, stiffness: 260 });
+        runOnJS(setOpenSide)("right");
+      } else {
+        translateX.value = withSpring(0, { damping: 20, stiffness: 220, overshootClamping: true });
+        runOnJS(setOpenSide)("closed");
       }
     });
 
@@ -90,67 +122,50 @@ export default function SwipeableRow({
   }));
 
   return (
-    <>
-      <View className="relative overflow-hidden rounded-xl">
-        {leftAction && (
-          <View
-            className={`absolute inset-y-0 left-0 w-24 items-start justify-center pl-5 ${leftAction.backgroundClassName}`}
-          >
-            {leftAction.icon}
-          </View>
-        )}
+    <View className="relative overflow-hidden rounded-xl">
+      {/* Larghezza pari a MAX_TRANSLATE (l'overscroll massimo raggiungibile
+          trascinando), non un valore fisso più stretto: altrimenti, andando
+          oltre con lo swipe, si vedeva per un attimo lo sfondo della card
+          oltre il bordo destro/sinistro del bottone colorato. */}
+      {leftAction && (
+        <Pressable
+          onPress={() => runTrigger("left")}
+          style={{ width: MAX_TRANSLATE }}
+          className={`absolute inset-y-0 left-0 items-start justify-center pl-5 ${leftAction.backgroundClassName}`}
+        >
+          {leftAction.icon}
+        </Pressable>
+      )}
 
-        {rightAction && (
-          <View
-            className={`absolute inset-y-0 right-0 w-24 items-end justify-center pr-5 ${rightAction.backgroundClassName}`}
-          >
-            {rightAction.icon}
-          </View>
-        )}
+      {rightAction && (
+        <Pressable
+          onPress={() => runTrigger("right")}
+          style={{ width: MAX_TRANSLATE }}
+          className={`absolute inset-y-0 right-0 items-end justify-center pr-5 ${rightAction.backgroundClassName}`}
+        >
+          {rightAction.icon}
+        </Pressable>
+      )}
 
-        <GestureDetector gesture={pan}>
-          <Animated.View
-            style={animatedStyle}
-            className="relative bg-white dark:bg-gray-800 rounded-xl"
-          >
-            {children}
-          </Animated.View>
-        </GestureDetector>
-      </View>
-
-      <Modal visible={confirmAction !== null} transparent animationType="fade">
-        <View className="flex-1 items-center justify-center bg-black/60 p-4">
-          <View className="w-full max-w-sm rounded-3xl border border-white/20 bg-white/95 p-8 dark:bg-gray-800/95">
-            <Text className="mb-4 text-xl font-semibold text-gray-800 dark:text-white">
-              {confirmAction?.confirm?.title}
-            </Text>
-            <Text className="mb-6 text-gray-600 dark:text-gray-300">
-              {confirmAction?.confirm?.message}
-            </Text>
-            <View className="flex-row gap-3">
-              <Pressable
-                onPress={() => setConfirmAction(null)}
-                className="flex-1 rounded-xl bg-gray-100 py-2.5 dark:bg-gray-700"
-              >
-                <Text className="text-center font-medium text-gray-700 dark:text-gray-300">
-                  Annulla
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  confirmAction?.onTrigger?.();
-                  setConfirmAction(null);
-                }}
-                className="flex-1 rounded-xl bg-red-500 py-2.5"
-              >
-                <Text className="text-center font-medium text-white">
-                  Elimina
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </>
+      <GestureDetector gesture={pan}>
+        <Animated.View
+          style={animatedStyle}
+          className="relative bg-white dark:bg-gray-800 rounded-xl"
+        >
+          {/* Overlay trasparente sopra il contenuto: quando la riga è aperta,
+              intercetta il primo tap per richiuderla invece di lasciarlo
+              passare al contenuto sottostante (es. navigazione al dettaglio
+              lista). Assente quando chiusa, per non aggiungere un layer di
+              tocco su ogni riga sempre. */}
+          {openSide !== "closed" && (
+            <Pressable
+              onPress={close}
+              style={{ position: "absolute", inset: 0, zIndex: 10 }}
+            />
+          )}
+          {children}
+        </Animated.View>
+      </GestureDetector>
+    </View>
   );
 }

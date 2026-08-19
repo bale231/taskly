@@ -28,6 +28,8 @@ type Props = {
  * Reanimated + react-native-svg dato che l'originale si basa su box-shadow
  * multipli, pseudo-elementi e keyframe CSS non traducibili 1:1 in RN.
  */
+const SCALE = 1.15;
+
 export default function ThemeToggle({ isDark, onToggle }: Props) {
   const progress = useSharedValue(isDark ? 1 : 0);
 
@@ -49,7 +51,12 @@ export default function ThemeToggle({ isDark, onToggle }: Props) {
   const moonCratersStyle = useAnimatedStyle(() => ({ opacity: progress.value }));
 
   return (
-    <Pressable onPress={onToggle} accessibilityLabel="Cambia tema" hitSlop={8}>
+    <Pressable
+      onPress={onToggle}
+      accessibilityLabel="Cambia tema"
+      hitSlop={8}
+      style={{ width: WIDTH * SCALE, height: HEIGHT * SCALE, justifyContent: "center", alignItems: "center" }}
+    >
       <Animated.View
         style={[
           {
@@ -58,6 +65,7 @@ export default function ThemeToggle({ isDark, onToggle }: Props) {
             borderRadius: HEIGHT / 2,
             overflow: "hidden",
             justifyContent: "center",
+            transform: [{ scale: SCALE }],
           },
           trackStyle,
         ]}

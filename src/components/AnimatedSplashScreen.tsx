@@ -29,23 +29,13 @@ export default function AnimatedSplashScreen() {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0A4F32",
+        backgroundColor: "#FFFFFF",
       }}
     >
-      <Animated.View
-        style={[
-          {
-            width: 180,
-            height: 180,
-            borderRadius: 90,
-            overflow: "hidden",
-          },
-          animatedStyle,
-        ]}
-      >
+      <Animated.View style={animatedStyle}>
         <Image
           source={require("../../assets/splash-icon.png")}
-          style={{ width: 180, height: 180, resizeMode: "cover" }}
+          style={{ width: 220, height: 220, resizeMode: "contain" }}
         />
       </Animated.View>
     </View>

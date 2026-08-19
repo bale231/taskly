@@ -14,6 +14,14 @@ export type RootStackParamList = {
   ForgotPassword: undefined;
   ResetPassword: { uid: string; token: string };
   Home: undefined;
-  ListDetail: { listId: number };
+  /**
+   * `todosCount` è opzionale: la Home lo passa (già conosce `list.todos.length`
+   * dalla lista appena caricata) per dimensionare correttamente lo skeleton
+   * di caricamento; senza (es. deep link diretto) si usa un default.
+   */
+  ListDetail: { listId: number; todosCount?: number };
   Profile: undefined;
+  FindUsers: undefined;
+  FriendRequests: undefined;
+  Friends: undefined;
 };

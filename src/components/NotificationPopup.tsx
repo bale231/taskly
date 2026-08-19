@@ -1,6 +1,9 @@
 import { AlertCircle, Check, RefreshCw, Trash2, X } from "lucide-react-native";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import BubbleModal from "./BubbleModal";
+import GlassSurface from "./GlassSurface";
 import { useNotifications, type Notification } from "../context/NotificationContext";
+import { useTheme } from "../context/ThemeContext";
 
 function NotificationIcon({ type }: { type: Notification["type"] }) {
   switch (type) {
@@ -21,14 +24,23 @@ function NotificationIcon({ type }: { type: Notification["type"] }) {
 export default function NotificationPopup() {
   const { notifications, showPopup, setShowPopup, markAsRead, markAllAsRead, deleteNotification } =
     useNotifications();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   return (
-    <Modal visible={showPopup} transparent animationType="fade">
-      <View className="flex-1 items-center justify-center bg-black/30 p-4">
-        <View
-          className="w-full max-w-sm rounded-xl border border-gray-200/50 bg-white p-6 dark:border-white/20 dark:bg-gray-900"
-          style={{ maxHeight: "70%" }}
-        >
+    <BubbleModal
+      visible={showPopup}
+      onRequestClose={() => setShowPopup(false)}
+      contentStyle={{ width: "100%", maxWidth: 384 }}
+    >
+      <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
+
           <View className="mb-4 flex-row items-center justify-between">
             <Text className="text-xl font-semibold text-gray-900 dark:text-white">Notifiche</Text>
             <View className="flex-row items-center gap-2">
@@ -94,8 +106,7 @@ export default function NotificationPopup() {
               ))
             )}
           </ScrollView>
-        </View>
       </View>
-    </Modal>
+    </BubbleModal>
   );
 }

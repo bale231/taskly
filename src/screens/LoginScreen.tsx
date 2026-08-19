@@ -20,10 +20,6 @@ import { setTokens } from "../services/storage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 
-// Pressable animabile: serve per interpolare backgroundColor sul tap,
-// cosa che il Pressable normale non supporta.
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 /**
  * Genera messaggi di errore specifici a partire dal messaggio del backend.
  * Logica identica alla webapp (src/pages/Login.tsx).
@@ -96,37 +92,36 @@ export default function LoginScreen({ navigation }: Props) {
   const [rememberMe, setRememberMe] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loginMode, setLoginMode] = useState<"username" | "email">("username");
+  const rememberMeScale = useRef(new Animated.Value(1)).current;
 
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formTranslateY = useRef(new Animated.Value(50)).current;
 
-  // Transizione del pill attivo nel toggle Username/Email: nella webapp
-  // era la classe Tailwind "transition" sullo sfondo bianco. 0 = username
-  // attivo, 1 = email attivo.
+  // Switch Username/Email: un thumb bianco trasla fisicamente da un lato
+  // all'altro (segmented control), non un fade indipendente delle due pill.
+  // 0 = username attivo, 1 = email attivo.
   const modeAnim = useRef(
     new Animated.Value(loginMode === "email" ? 1 : 0)
   ).current;
+  const [toggleWidth, setToggleWidth] = useState(0);
+  // `toggleWidth` è la larghezza di UNA delle due metà (misurata via
+  // onLayout sul Pressable "Username"): il thumb deve traslare esattamente
+  // di quella distanza per allinearsi sotto "Email".
+  const THUMB_TRAVEL = toggleWidth;
 
   useEffect(() => {
-    Animated.timing(modeAnim, {
+    // `useNativeDriver: false`: questo stesso valore alimenta anche
+    // l'interpolazione di `color` sui testi (non animabile dal driver
+    // nativo), quindi non può essere mixato con l'animazione native-only
+    // del transform del thumb.
+    Animated.spring(modeAnim, {
       toValue: loginMode === "email" ? 1 : 0,
-      duration: 200,
-      useNativeDriver: false, // animiamo backgroundColor, non trasformazioni
+      friction: 8,
+      tension: 80,
+      useNativeDriver: false,
     }).start();
   }, [loginMode, modeAnim]);
 
-  // "transparent" equivale a rgba(0,0,0,0): interpolando da "#FFFFFF" a
-  // "transparent" i canali RGB scivolano verso il nero mentre l'alpha
-  // scende, quindi il pill lampeggia scuro a metà transizione. Si anima
-  // invece solo l'alpha, tenendo i canali RGB fissi sul bianco.
-  const usernamePillBg = modeAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["rgba(255,255,255,1)", "rgba(255,255,255,0)"],
-  });
-  const emailPillBg = modeAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["rgba(255,255,255,0)", "rgba(255,255,255,1)"],
-  });
   const usernameTextColor = modeAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ["#111827", "#374151"],
@@ -215,8 +210,8 @@ export default function LoginScreen({ navigation }: Props) {
       <View className="flex-1 items-center justify-center bg-gray-100">
         <View className="items-center gap-4">
           <Image
-            source={require("../../assets/logo-taskly-themelight-cropped.png")}
-            style={{ width: 200, height: 60, resizeMode: "contain" }}
+            source={require("../../assets/logo-theme-light.png")}
+            style={{ width: 200, height: 62, resizeMode: "contain" }}
           />
           <ActivityIndicator size="large" color="#3B82F6" />
         </View>
@@ -247,8 +242,8 @@ export default function LoginScreen({ navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-taskly-themelight-cropped.png")}
-            style={{ width: 270, height: 80, resizeMode: "contain" }}
+            source={require("../../assets/logo-theme-light.png")}
+            style={{ width: 340, height: 106, resizeMode: "contain" }}
           />
         </View>
 
@@ -272,8 +267,39 @@ export default function LoginScreen({ navigation }: Props) {
               padding: 4,
             }}
           >
-            <AnimatedPressable
+            {/* Thumb bianco che scorre fisicamente da un lato all'altro
+                (segmented control stile iOS), invece del fade indipendente
+                di due pill sovrapposte usato prima. */}
+            <Animated.View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 4,
+                bottom: 4,
+                left: 4,
+                width: "50%",
+                borderRadius: 8,
+                backgroundColor: "#FFFFFF",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.15,
+                shadowRadius: 2,
+                elevation: 2,
+                transform: [
+                  {
+                    translateX: modeAnim.interpolate({
+                      inputRange: [0, 1],
+                      // -4 di padding già incluso nel `left: 4`, il thumb
+                      // trasla della larghezza del container meno il padding.
+                      outputRange: [0, THUMB_TRAVEL],
+                    }),
+                  },
+                ],
+              }}
+            />
+            <Pressable
               onPress={() => setLoginMode("username")}
+              onLayout={(e) => setToggleWidth(e.nativeEvent.layout.width)}
               style={{
                 flex: 1,
                 flexDirection: "row",
@@ -283,7 +309,6 @@ export default function LoginScreen({ navigation }: Props) {
                 borderRadius: 8,
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: usernamePillBg,
               }}
             >
               <User
@@ -299,8 +324,8 @@ export default function LoginScreen({ navigation }: Props) {
               >
                 Username
               </Animated.Text>
-            </AnimatedPressable>
-            <AnimatedPressable
+            </Pressable>
+            <Pressable
               onPress={() => setLoginMode("email")}
               style={{
                 flex: 1,
@@ -311,7 +336,6 @@ export default function LoginScreen({ navigation }: Props) {
                 borderRadius: 8,
                 paddingHorizontal: 12,
                 paddingVertical: 8,
-                backgroundColor: emailPillBg,
               }}
             >
               <AtSign
@@ -327,7 +351,7 @@ export default function LoginScreen({ navigation }: Props) {
               >
                 Email
               </Animated.Text>
-            </AnimatedPressable>
+            </Pressable>
           </View>
         </View>
 
@@ -353,11 +377,21 @@ export default function LoginScreen({ navigation }: Props) {
 
         {/* Ricordami */}
         <Pressable
-          onPress={() => setRememberMe((prev) => !prev)}
+          onPress={() => {
+            setRememberMe((prev) => !prev);
+            rememberMeScale.setValue(0.7);
+            Animated.spring(rememberMeScale, {
+              toValue: 1,
+              friction: 4,
+              tension: 200,
+              useNativeDriver: true,
+            }).start();
+          }}
           className="mb-4 flex-row items-center"
           hitSlop={6}
         >
-          <View
+          <Animated.View
+            style={{ transform: [{ scale: rememberMeScale }] }}
             className={`h-6 w-6 items-center justify-center rounded-md border-2 ${
               rememberMe
                 ? "border-blue-600 bg-blue-600"
@@ -365,16 +399,15 @@ export default function LoginScreen({ navigation }: Props) {
             }`}
           >
             {rememberMe ? <Check size={16} color="#FFFFFF" strokeWidth={3} /> : null}
-          </View>
+          </Animated.View>
           <Text className="ml-2 text-sm text-gray-700">Rimani loggato</Text>
         </Pressable>
 
         <Pressable
           onPress={handleLogin}
           disabled={isLoading}
-          className={`w-full items-center rounded py-3 ${
-            isLoading ? "bg-gray-400" : "bg-blue-600"
-          }`}
+          className="w-full items-center rounded py-3"
+          style={{ backgroundColor: isLoading ? "#9CA3AF" : "#3B82F6" }}
         >
           <Text className="font-semibold text-white">
             {isLoading ? "Attendi..." : "Accedi"}
