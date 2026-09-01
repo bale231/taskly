@@ -6,8 +6,10 @@ import { useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { proactiveTokenRefresh } from "./src/api/auth";
+import AnimatedAlert from "./src/components/AnimatedAlert";
 import AnimatedSplashScreen from "./src/components/AnimatedSplashScreen";
 import NotificationPopup from "./src/components/NotificationPopup";
+import { AlertProvider, useAlert } from "./src/context/AlertContext";
 import { NetworkProvider } from "./src/context/NetworkContext";
 import { NotificationProvider } from "./src/context/NotificationContext";
 import { ThemeProvider } from "./src/context/ThemeContext";
@@ -43,15 +45,28 @@ export default function App() {
         <NetworkProvider>
           <ThemeProvider>
             <NotificationProvider>
-              <BottomSheetModalProvider>
-                <StatusBar style="auto" />
-                <RootNavigator />
-                <NotificationPopup />
-              </BottomSheetModalProvider>
+              <AlertProvider>
+                <BottomSheetModalProvider>
+                  <StatusBar style="auto" />
+                  <RootNavigator />
+                  <NotificationPopup />
+                  <GlobalAlert />
+                </BottomSheetModalProvider>
+              </AlertProvider>
             </NotificationProvider>
           </ThemeProvider>
         </NetworkProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
+}
+
+function GlobalAlert() {
+  const { alert, hideAlert, hasOpenModal } = useAlert();
+  // Mentre una BubbleModal è aperta, è lei stessa a renderizzare l'alert al
+  // suo interno (sopra il proprio blur): questo toast globale deve restare
+  // muto, altrimenti l'alert comparirebbe anche qui, sotto quella finestra
+  // nativa e quindi invisibile ma comunque montato/animato in parallelo.
+  if (hasOpenModal()) return null;
+  return <AnimatedAlert alert={alert} onClose={hideAlert} />;
 }

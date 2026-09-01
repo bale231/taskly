@@ -71,10 +71,13 @@ export async function fetchAllLists() {
   return deduplicatedFetch(
     cacheKey,
     async () => {
-      const res = await fetch(`${API_URL}/lists/`, {
-        method: "GET",
-        headers: await getAuthHeaders(),
-      });
+      // fetchWithAuth, non fetch diretto: senza il retry automatico su 401
+      // (refresh del token + nuovo tentativo), un access token scaduto nel
+      // momento esatto di questa chiamata falliva definitivamente — più
+      // probabile su sessioni non persistenti, dove il token è più "fresco"
+      // e la finestra di race con il refresh proattivo di App.tsx è più
+      // stretta — mostrando liste vuote invece di ritentare.
+      const res = await fetchWithAuth(`${API_URL}/lists/`, { method: "GET" });
       return safeJson(res, "fetchAllLists");
     },
     CACHE_TTL.LISTS
@@ -101,9 +104,8 @@ export async function fetchListDetails(listId: number | string) {
   return deduplicatedFetch(
     cacheKey,
     async () => {
-      const res = await fetch(`${API_URL}/lists/${listId}/`, {
+      const res = await fetchWithAuth(`${API_URL}/lists/${listId}/`, {
         method: "GET",
-        headers: await getAuthHeaders(),
       });
       return safeJson<ListDetailsResponse>(res, `fetchListDetails(${listId})`);
     },
@@ -118,9 +120,8 @@ export async function fetchListDetailsForce(listId: number | string) {
 }
 
 export async function renameList(listId: number, newName: string) {
-  const res = await fetch(`${API_URL}/lists/${listId}/rename/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/rename/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ name: newName }),
   });
   return res.json();
@@ -135,9 +136,8 @@ export async function editList(
 ) {
   const body: Record<string, unknown> = { name, color };
   if (typeof categoryId !== "undefined") body.category = categoryId;
-  const res = await fetch(`${API_URL}/lists/${listId}/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/`, {
     method: "PUT",
-    headers: await getAuthHeaders(),
     body: JSON.stringify(body),
   });
   invalidateCache(/^lists?:/);
@@ -151,9 +151,8 @@ export async function createList(
 ) {
   const body: Record<string, unknown> = { name, color };
   if (typeof categoryId !== "undefined") body.category = categoryId;
-  const res = await fetch(`${API_URL}/lists/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/`, {
     method: "POST",
-    headers: await getAuthHeaders(),
     body: JSON.stringify(body),
   });
   invalidateCache(/^lists:/);
@@ -161,9 +160,8 @@ export async function createList(
 }
 
 export async function deleteList(listId: number) {
-  const res = await fetch(`${API_URL}/lists/${listId}/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/`, {
     method: "DELETE",
-    headers: await getAuthHeaders(),
   });
   invalidateCache(/^lists?:/);
   return res.json();
@@ -171,18 +169,16 @@ export async function deleteList(listId: number) {
 
 // 📦 Archivia/Disarchivia lista
 export async function archiveList(listId: number) {
-  const res = await fetch(`${API_URL}/lists/${listId}/archive/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/archive/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
   });
   invalidateCache(/^lists?:/);
   return res.json();
 }
 
 export async function unarchiveList(listId: number) {
-  const res = await fetch(`${API_URL}/lists/${listId}/unarchive/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/unarchive/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
   });
   invalidateCache(/^lists?:/);
   return res.json();
@@ -194,9 +190,8 @@ export async function fetchAllCategories() {
   return deduplicatedFetch(
     cacheKey,
     async () => {
-      const res = await fetch(`${API_URL}/categories/`, {
+      const res = await fetchWithAuth(`${API_URL}/categories/`, {
         method: "GET",
-        headers: await getAuthHeaders(),
       });
       return safeJson(res, "fetchAllCategories");
     },
@@ -210,9 +205,8 @@ export async function fetchAllCategoriesForce() {
 }
 
 export async function createCategory(name: string) {
-  const res = await fetch(`${API_URL}/categories/`, {
+  const res = await fetchWithAuth(`${API_URL}/categories/`, {
     method: "POST",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ name }),
   });
   invalidateCache(/^categories:/);
@@ -220,9 +214,8 @@ export async function createCategory(name: string) {
 }
 
 export async function editCategory(categoryId: number, name: string) {
-  const res = await fetch(`${API_URL}/categories/${categoryId}/`, {
+  const res = await fetchWithAuth(`${API_URL}/categories/${categoryId}/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ name }),
   });
   invalidateCache(/^categories:/);
@@ -230,9 +223,8 @@ export async function editCategory(categoryId: number, name: string) {
 }
 
 export async function deleteCategory(categoryId: number) {
-  const res = await fetch(`${API_URL}/categories/${categoryId}/`, {
+  const res = await fetchWithAuth(`${API_URL}/categories/${categoryId}/`, {
     method: "DELETE",
-    headers: await getAuthHeaders(),
   });
   invalidateCache(/^categories:/);
   return res.json();
@@ -243,15 +235,18 @@ export async function createTodo(
   listId: number | string,
   title: string,
   quantity?: number | null,
-  unit?: string | null
+  unit?: string | null,
+  description?: string | null
 ) {
   const body: Record<string, unknown> = { title };
   if (quantity !== undefined && quantity !== null) body.quantity = quantity;
   if (unit !== undefined && unit !== null) body.unit = unit;
+  if (description !== undefined && description !== null && description !== "") {
+    body.description = description;
+  }
 
-  const res = await fetch(`${API_URL}/lists/${listId}/todos/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/todos/`, {
     method: "POST",
-    headers: await getAuthHeaders(),
     body: JSON.stringify(body),
   });
   invalidateCache(/^lists?:/);
@@ -259,18 +254,16 @@ export async function createTodo(
 }
 
 export async function toggleTodo(todoId: number) {
-  const res = await fetch(`${API_URL}/todos/${todoId}/toggle/`, {
+  const res = await fetchWithAuth(`${API_URL}/todos/${todoId}/toggle/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
   });
   invalidateCache(/^lists?:/);
   return res.json();
 }
 
 export async function deleteTodo(todoId: number) {
-  const res = await fetch(`${API_URL}/todos/${todoId}/`, {
+  const res = await fetchWithAuth(`${API_URL}/todos/${todoId}/`, {
     method: "DELETE",
-    headers: await getAuthHeaders(),
   });
   invalidateCache(/^lists?:/);
   return res.json();
@@ -281,15 +274,16 @@ export async function updateTodo(
   todoId: number,
   title: string,
   quantity?: number | null,
-  unit?: string | null
+  unit?: string | null,
+  description?: string | null
 ) {
   const body: Record<string, unknown> = { title };
   if (quantity !== undefined) body.quantity = quantity;
   if (unit !== undefined) body.unit = unit;
+  if (description !== undefined) body.description = description;
 
-  const res = await fetch(`${API_URL}/todos/${todoId}/update/`, {
+  const res = await fetchWithAuth(`${API_URL}/todos/${todoId}/update/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify(body),
   });
   invalidateCache(/^lists?:/);
@@ -301,9 +295,8 @@ export async function reorderTodos(
   listId: string | undefined,
   order: number[]
 ) {
-  const res = await fetch(`${API_URL}/lists/${listId}/reorder/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/reorder/`, {
     method: "POST",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ order }),
   });
   invalidateCache(new RegExp(`^list:${listId}`));
@@ -315,9 +308,8 @@ export async function updateSortOrder(
   listId: number | string,
   sortOrder: string
 ) {
-  const res = await fetch(`${API_URL}/lists/${listId}/sort_order/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/sort_order/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ sort_order: sortOrder }),
   });
 
@@ -333,9 +325,8 @@ export async function updateSortOrder(
 
 // ✅ PATCH per spostare una ToDo in un'altra lista
 export async function moveTodo(todoId: number, newListId: number) {
-  const res = await fetch(`${API_URL}/todos/${todoId}/move/`, {
+  const res = await fetchWithAuth(`${API_URL}/todos/${todoId}/move/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ new_list_id: newListId }),
   });
   invalidateCache(/^lists?:/);
@@ -344,9 +335,8 @@ export async function moveTodo(todoId: number, newListId: number) {
 
 // --- 🎯 PREFERENZE CATEGORIA ---
 export async function saveSelectedCategory(categoryId: number | null) {
-  const res = await fetch(`${API_URL}/categories/selected/`, {
+  const res = await fetchWithAuth(`${API_URL}/categories/selected/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ selected_category: categoryId }),
   });
   invalidateCache(/^prefs:/);
@@ -363,9 +353,8 @@ export async function getSelectedCategory() {
   return deduplicatedFetch(
     cacheKey,
     async () => {
-      const res = await fetch(`${API_URL}/categories/selected/`, {
+      const res = await fetchWithAuth(`${API_URL}/categories/selected/`, {
         method: "GET",
-        headers: await getAuthHeaders(),
       });
       return res.json();
     },
@@ -377,9 +366,7 @@ export async function getSelectedCategory() {
 export async function fetchListsSortOrder(): Promise<
   "created" | "alphabetical" | "complete"
 > {
-  const res = await fetch(`${API_URL}/lists/sort_order/`, {
-    headers: await getAuthHeaders(),
-  });
+  const res = await fetchWithAuth(`${API_URL}/lists/sort_order/`, {});
   if (!res.ok) return "created";
   const { sort_order } = await res.json();
   return sort_order === "alphabetical" || sort_order === "complete"
@@ -390,9 +377,8 @@ export async function fetchListsSortOrder(): Promise<
 export async function updateListsSortOrder(
   sortOrder: "created" | "alphabetical" | "complete"
 ) {
-  const res = await fetch(`${API_URL}/lists/sort_order/`, {
+  const res = await fetchWithAuth(`${API_URL}/lists/sort_order/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ sort_order: sortOrder }),
   });
   if (!res.ok) {
@@ -402,18 +388,15 @@ export async function updateListsSortOrder(
 }
 
 export async function fetchCategorySortAlpha(): Promise<boolean> {
-  const res = await fetch(`${API_URL}/categories/sort_preference/`, {
-    headers: await getAuthHeaders(),
-  });
+  const res = await fetchWithAuth(`${API_URL}/categories/sort_preference/`, {});
   if (!res.ok) return false;
   const { category_sort_alpha } = await res.json();
   return Boolean(category_sort_alpha);
 }
 
 export async function updateCategorySortAlpha(value: boolean) {
-  const res = await fetch(`${API_URL}/categories/sort_preference/`, {
+  const res = await fetchWithAuth(`${API_URL}/categories/sort_preference/`, {
     method: "PATCH",
-    headers: await getAuthHeaders(),
     body: JSON.stringify({ category_sort_alpha: value }),
   });
   if (!res.ok) {

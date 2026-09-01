@@ -1,7 +1,7 @@
 // Port di src/api/notifications.ts della webapp. Rete identica
 // all'originale: cambia solo lo storage del token (async).
 import { API_URL } from "./config";
-import { getAccessToken } from "../services/storage";
+import { fetchWithAuth } from "./todos";
 
 export interface Notification {
   id: number;
@@ -18,19 +18,9 @@ export interface Notification {
   list_name?: string;
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const token = await getAccessToken();
-  if (!token) throw new Error("Token non trovato");
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-}
-
 export const fetchNotifications = async (): Promise<Notification[]> => {
-  const response = await fetch(`${API_URL}/notifications/`, {
+  const response = await fetchWithAuth(`${API_URL}/notifications/`, {
     method: "GET",
-    headers: await authHeaders(),
   });
 
   if (!response.ok) {
@@ -41,9 +31,8 @@ export const fetchNotifications = async (): Promise<Notification[]> => {
 };
 
 export const markNotificationAsRead = async (notificationId: number): Promise<void> => {
-  const response = await fetch(`${API_URL}/notifications/${notificationId}/read/`, {
+  const response = await fetchWithAuth(`${API_URL}/notifications/${notificationId}/read/`, {
     method: "PATCH",
-    headers: await authHeaders(),
   });
 
   if (!response.ok) {
@@ -52,9 +41,8 @@ export const markNotificationAsRead = async (notificationId: number): Promise<vo
 };
 
 export const markAllNotificationsAsRead = async (): Promise<void> => {
-  const response = await fetch(`${API_URL}/notifications/mark_all_read/`, {
+  const response = await fetchWithAuth(`${API_URL}/notifications/mark_all_read/`, {
     method: "POST",
-    headers: await authHeaders(),
   });
 
   if (!response.ok) {
@@ -63,9 +51,8 @@ export const markAllNotificationsAsRead = async (): Promise<void> => {
 };
 
 export const deleteNotification = async (notificationId: number): Promise<void> => {
-  const response = await fetch(`${API_URL}/notifications/${notificationId}/`, {
+  const response = await fetchWithAuth(`${API_URL}/notifications/${notificationId}/`, {
     method: "DELETE",
-    headers: await authHeaders(),
   });
 
   if (!response.ok) {

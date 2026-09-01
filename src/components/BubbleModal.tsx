@@ -8,6 +8,8 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
+import AnimatedAlert from "./AnimatedAlert";
+import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
 
 type BubbleModalProps = {
@@ -44,6 +46,7 @@ export default function BubbleModal({
 }: BubbleModalProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const { alert, hideAlert, registerModalOpen, registerModalClosed } = useAlert();
   // Il Modal nativo smonta il contenuto non appena `visible` diventa false,
   // quindi teniamolo montato (`shouldRender`) finché l'animazione di uscita
   // non è finita, altrimenti la chiusura sarebbe istantanea e non animata.
@@ -72,6 +75,16 @@ export default function BubbleModal({
       }
     }
   }, [visible, variant, overlayOpacity, scale, translateY]);
+
+  // Segnala al context globale quanto tempo questa modale resta aperta, così
+  // il toast in App.tsx sa quando tacere (evita il doppio alert: uno qui
+  // dentro, sopra il blur, e uno globale sotto — invisibile ma comunque
+  // montato).
+  useEffect(() => {
+    if (!shouldRender) return;
+    registerModalOpen();
+    return () => registerModalClosed();
+  }, [shouldRender, registerModalOpen, registerModalClosed]);
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.value }));
   // Niente opacity qui (a differenza dell'overlay sopra): il contenuto può
@@ -117,6 +130,13 @@ export default function BubbleModal({
         <Animated.View style={[contentStyle, contentAnimStyle]} pointerEvents="box-none">
           {children}
         </Animated.View>
+
+        {/* Un <Modal> nativo RN è una finestra separata: un alert renderizzato
+            fuori (es. in App.tsx) finiva sempre sotto il blur di questa
+            modale, indipendentemente dall'ordine nell'albero React. Renderlo
+            qui dentro, come ultimo figlio, lo mette sopra al contenuto di
+            *questa* finestra invece che in una window separata e invisibile. */}
+        <AnimatedAlert alert={alert} onClose={hideAlert} />
       </Animated.View>
     </Modal>
   );

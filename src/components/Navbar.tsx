@@ -1,6 +1,8 @@
+import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useNavigation } from "@react-navigation/native";
-import { useState } from "react";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import { LogOut, User as UserIcon } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -10,10 +12,14 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getCurrentUserJWT, logout } from "../api/auth";
+import { GlassBottomSheetBackdrop, GlassBottomSheetBackground } from "./GlassBottomSheet";
 import GlassSurface from "./GlassSurface";
 import NotificationBadge from "./NotificationBadge";
 import ThemeToggle from "./ThemeToggle";
 import { useTheme } from "../context/ThemeContext";
+
+const AVATAR_BASE_URL = "https://bale231.pythonanywhere.com";
 
 /**
  * Altezza della navbar esclusa la safe area. Ora che la navbar è un overlay
@@ -43,6 +49,23 @@ export default function Navbar({ scrollY }: NavbarProps) {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const isDark = theme === "dark";
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const menuRef = useRef<BottomSheetModal>(null);
+
+  useEffect(() => {
+    getCurrentUserJWT().then((user) => {
+      if (user) setAvatarUri(user.profile_picture ?? null);
+    });
+  }, []);
+
+  const handleLogout = async () => {
+    menuRef.current?.dismiss();
+    await logout();
+    // reset, non replace: azzera l'intero stack di navigazione, non solo
+    // la route in cima — altrimenti lo swipe-back nativo poteva riesumare
+    // la Home della sessione appena terminata.
+    navigation.reset({ index: 0, routes: [{ name: "Login" }] });
+  };
 
   // Il vetro compare/scompare come booleano a soglia, non con un'opacità
   // continua: su GlassView (Liquid Glass, iOS 26+) impostare l'opacità a 0
@@ -90,7 +113,15 @@ export default function Navbar({ scrollY }: NavbarProps) {
       />
 
       <Pressable
-        onPress={() => navigation.navigate("Home")}
+        onPress={() => {
+          // popToTop, non navigate: Home è sempre la radice dello stack
+          // autenticato, navigate da una schermata secondaria (Profilo,
+          // ListDetail) ci aggiungeva sopra invece di tornare a quella
+          // esistente, lasciando la schermata di provenienza raggiungibile
+          // con lo swipe-back nativo anche dopo essere "arrivati" a Home.
+          if (navigation.canGoBack()) navigation.popToTop();
+          else navigation.navigate("Home");
+        }}
         hitSlop={8}
         style={{ height: "100%", justifyContent: "center", flexShrink: 1 }}
       >
@@ -100,8 +131,16 @@ export default function Navbar({ scrollY }: NavbarProps) {
               ? require("../../assets/logo-theme-dark.png")
               : require("../../assets/logo-theme-light.png")
           }
-          // Aspect ratio ~3:1 dei nuovi loghi (logo-theme-dark/light.png).
-          style={{ width: 165, height: 52, resizeMode: "contain" }}
+          // Stesso box per entrambi i temi, ma il file light appare più
+          // piccolo a percezione anche a parità di width/height: un
+          // transform scale compensa solo quella versione, senza toccare
+          // il layout (il box che occupa resta identico in entrambi i casi).
+          style={{
+            width: 165,
+            height: 52,
+            resizeMode: "contain",
+            transform: [{ scale: isDark ? 1 : 1.06 }],
+          }}
         />
       </Pressable>
 
@@ -109,7 +148,59 @@ export default function Navbar({ scrollY }: NavbarProps) {
         <ThemeToggle isDark={isDark} onToggle={() => setTheme(isDark ? "light" : "dark")} />
 
         <NotificationBadge />
+
+        <Pressable
+          onPress={() => menuRef.current?.present()}
+          hitSlop={8}
+          className="h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-gray-200/50 bg-white/50 dark:border-white/20 dark:bg-gray-700/50"
+        >
+          {avatarUri ? (
+            <Image
+              source={{
+                uri: avatarUri.startsWith("http") ? avatarUri : `${AVATAR_BASE_URL}${avatarUri}`,
+              }}
+              style={{ width: 36, height: 36 }}
+            />
+          ) : (
+            <UserIcon size={18} color={isDark ? "#D1D5DB" : "#6B7280"} />
+          )}
+        </Pressable>
       </View>
+
+      {/* Menu contestuale stile iOS (Messaggi/Contatti): tap sull'avatar
+          apre una scelta rapida invece di navigare subito al Profilo,
+          così da poter uscire senza dover prima entrare in quella schermata. */}
+      <BottomSheetModal
+        ref={menuRef}
+        enableDynamicSizing
+        backgroundComponent={GlassBottomSheetBackground}
+        handleIndicatorStyle={{ backgroundColor: isDark ? "#4B5563" : "#D1D5DB" }}
+        backdropComponent={(props) => (
+          <GlassBottomSheetBackdrop {...props} onClose={() => menuRef.current?.dismiss()} />
+        )}
+      >
+        <BottomSheetView
+          style={{ paddingHorizontal: 16, paddingBottom: Math.max(insets.bottom, 16) + 16 }}
+        >
+          <Pressable
+            onPress={() => {
+              menuRef.current?.dismiss();
+              navigation.navigate("Profile");
+            }}
+            className="mb-2 flex-row items-center gap-3 rounded-2xl bg-gray-100 px-6 py-5 dark:bg-gray-800"
+          >
+            <UserIcon size={20} color={isDark ? "#E5E7EB" : "#374151"} />
+            <Text className="text-lg font-medium text-gray-800 dark:text-gray-200">Profilo</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleLogout}
+            className="flex-row items-center gap-3 rounded-2xl bg-red-50 px-6 py-5 dark:bg-red-900/30"
+          >
+            <LogOut size={20} color="#DC2626" />
+            <Text className="text-lg font-medium text-red-600 dark:text-red-400">Esci</Text>
+          </Pressable>
+        </BottomSheetView>
+      </BottomSheetModal>
     </View>
   );
 }

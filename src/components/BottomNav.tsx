@@ -1,6 +1,6 @@
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Home, ListFilter, Pencil, Plus, Search, User } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedPressable from "./AnimatedPressable";
 import GlassSurface from "./GlassSurface";
@@ -81,8 +81,19 @@ export default function BottomNav({
           <AnimatedPressable
             active={isHome}
             onPress={() => {
-              if (isHome) onHomePress?.();
-              else navigation.navigate("Home");
+              if (isHome) {
+                onHomePress?.();
+              } else if (navigation.canGoBack()) {
+                // popToTop invece di navigate: da qualunque schermata
+                // secondaria (Profilo, ListDetail, ecc.) Home è sempre la
+                // radice dello stack — navigate qui aggiungeva un nuovo
+                // push invece di tornare a quella esistente, lasciando la
+                // schermata di provenienza sotto e raggiungibile con lo
+                // swipe-back nativo anche dopo essere "arrivati" a Home.
+                navigation.popToTop();
+              } else {
+                navigation.navigate("Home");
+              }
             }}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
             activeBackgroundColor={isDark ? "rgba(30,58,138,0.5)" : "#DBEAFE"}
@@ -139,16 +150,17 @@ export default function BottomNav({
         {showEdit && onToggleEdit && (
           <AnimatedPressable
             active={editMode}
+            glass
             onPress={onToggleEdit}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
             accessibilityLabel={editTitle}
-            activeBackgroundColor={isDark ? "rgba(20,83,45,0.5)" : "#DCFCE7"}
+            activeBackgroundColor="#16A34A"
             pillStyle={{ borderRadius: 16, padding: 8 }}
             icon={
               <Pencil
                 size={28}
                 strokeWidth={editMode ? 2.5 : 2}
-                color={editMode ? "#16A34A" : "#6B7280"}
+                color={editMode ? "#FFFFFF" : "#6B7280"}
               />
             }
           >
@@ -161,32 +173,30 @@ export default function BottomNav({
         )}
 
         {showSort && onCycleSortOption && (
-          <Pressable
+          <AnimatedPressable
             onPress={onCycleSortOption}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
             accessibilityLabel={`Ordina: ${SORT_LABELS[sortOption] ?? sortOption}`}
+            pillStyle={{ borderRadius: 16, padding: 8 }}
+            icon={<ListFilter size={28} color="#6B7280" />}
           >
-            <View className="rounded-2xl p-2">
-              <ListFilter size={28} color="#6B7280" />
-            </View>
             <Text className="text-xs font-semibold text-gray-500 dark:text-gray-400">
               Ordina
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         )}
 
         {showSearch && onSearch && (
-          <Pressable
+          <AnimatedPressable
             onPress={onSearch}
             className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
+            pillStyle={{ borderRadius: 16, padding: 8 }}
+            icon={<Search size={28} color="#6B7280" />}
           >
-            <View className="rounded-2xl p-2">
-              <Search size={28} color="#6B7280" />
-            </View>
             <Text className="text-xs font-semibold text-gray-500 dark:text-gray-400">
               Cerca
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         )}
       </View>
     </View>

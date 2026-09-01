@@ -1,5 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { AtSign, Check, User } from "lucide-react-native";
+import { AtSign, Check, CheckCircle, User, XCircle } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -7,12 +7,15 @@ import {
   Image,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
-import { getCurrentUserJWT, login } from "../api/auth";
-import ErrorBanner from "../components/ErrorBanner";
+import { confirmEmailVerification, getCurrentUserJWT, login } from "../api/auth";
+import BubbleModal from "../components/BubbleModal";
 import FloatingLabelInput from "../components/FloatingLabelInput";
+import GlassSurface from "../components/GlassSurface";
+import { useAlert } from "../context/AlertContext";
 import { useNetwork } from "../context/NetworkContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
@@ -82,13 +85,16 @@ export const getSpecificErrorMessage = (errorMessage: string): string => {
   return errorMessage || "Credenziali non valide";
 };
 
-export default function LoginScreen({ navigation }: Props) {
+export default function LoginScreen({ navigation, route }: Props) {
   const { isOnline } = useNetwork();
   const { reloadTheme } = useTheme();
+  const { showAlert } = useAlert();
+  // Login resta sempre a tema chiaro, indipendentemente dal tema
+  // globale dell'app (a differenza di Register, sempre scuro): non
+  // segue useTheme() per lo sfondo/logo, solo per il refresh post-login.
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [loginMode, setLoginMode] = useState<"username" | "email">("username");
@@ -131,13 +137,56 @@ export default function LoginScreen({ navigation }: Props) {
     outputRange: ["#374151", "#111827"],
   });
 
-  // Check auth FIRST before showing anything
+  // Arriva dal deep link taskly://verify-email/:uid/:token: verifica ed
+  // esito mostrati qui via modale, invece che in una schermata a parte.
+  const verifyEmailParams = route.params?.verifyEmail;
+  const [verifyStatus, setVerifyStatus] = useState<"idle" | "loading" | "success" | "error">(
+    verifyEmailParams ? "loading" : "idle"
+  );
+  const [verifyMessage, setVerifyMessage] = useState("");
+
   useEffect(() => {
+    if (!verifyEmailParams) return;
+    const verify = async () => {
+      try {
+        const { ok, data } = await confirmEmailVerification(
+          verifyEmailParams.uid,
+          verifyEmailParams.token
+        );
+        if (ok && data.verified) {
+          setVerifyStatus("success");
+          setVerifyMessage(data.message || "Email verificata con successo!");
+        } else {
+          setVerifyStatus("error");
+          setVerifyMessage(data.error || "Link non valido o scaduto.");
+        }
+      } catch {
+        setVerifyStatus("error");
+        setVerifyMessage("Errore di connessione. Riprova più tardi.");
+      }
+    };
+    verify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verifyEmailParams?.uid, verifyEmailParams?.token]);
+
+  // Check auth FIRST before showing anything — non se si è appena arrivati
+  // dal link di verifica email: l'utente deve vedere l'esito prima di
+  // essere eventualmente rimandato a Home.
+  useEffect(() => {
+    if (verifyEmailParams) {
+      setCheckingAuth(false);
+      return;
+    }
     const checkAlreadyLoggedIn = async () => {
       try {
         const user = await getCurrentUserJWT();
         if (user) {
-          navigation.replace("Home");
+          // reset, non replace: replace sostituisce solo la route in cima
+          // allo stack, lasciando intatto tutto ciò che sta sotto — se lo
+          // stack aveva già una Home precedente (es. da una sessione senza
+          // "Rimani loggato" chiusa e riaperta), lo swipe-back nativo la
+          // riesumava ancora con i dati vecchi. reset azzera l'intero stack.
+          navigation.reset({ index: 0, routes: [{ name: "Home" }] });
         } else {
           setCheckingAuth(false);
         }
@@ -146,15 +195,8 @@ export default function LoginScreen({ navigation }: Props) {
       }
     };
     checkAlreadyLoggedIn();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation]);
-
-  // Auto-dismiss error after 4 seconds
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(""), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
 
   // Fade-in del form: era gsap.fromTo({opacity:0,y:50} -> {opacity:1,y:0})
   useEffect(() => {
@@ -175,12 +217,15 @@ export default function LoginScreen({ navigation }: Props) {
   }, [checkingAuth, formOpacity, formTranslateY]);
 
   const handleLogin = async () => {
+    if (!username.trim() || !password) {
+      showAlert("warning", "Inserisci username/email e password.");
+      return;
+    }
     if (!isOnline) {
-      setError("Sei offline. Il login richiede una connessione internet.");
+      showAlert("error", "Sei offline. Il login richiede una connessione internet.");
       return;
     }
     setIsLoading(true);
-    setError("");
 
     const result = await login(username, password, rememberMe);
 
@@ -193,12 +238,14 @@ export default function LoginScreen({ navigation }: Props) {
       if (user) {
         // Sostituisce il MutationObserver su data-access-token della webapp.
         await reloadTheme();
-        navigation.replace("Home");
+        // reset, non replace: vedi commento sopra in checkAlreadyLoggedIn.
+        navigation.reset({ index: 0, routes: [{ name: "Home" }] });
       } else {
-        setError("Errore nel recupero dati utente");
+        showAlert("error", "Errore nel recupero dati utente");
       }
     } else {
-      setError(getSpecificErrorMessage(result.message));
+      const message = getSpecificErrorMessage(result.message);
+      showAlert(message === "Verifica l'email prima di loggarti!" ? "warning" : "error", message);
     }
 
     setIsLoading(false);
@@ -218,8 +265,6 @@ export default function LoginScreen({ navigation }: Props) {
       </View>
     );
   }
-
-  const isWarning = error === "Verifica l'email prima di loggarti!";
 
   return (
     <ScrollView
@@ -246,13 +291,6 @@ export default function LoginScreen({ navigation }: Props) {
             style={{ width: 340, height: 106, resizeMode: "contain" }}
           />
         </View>
-
-        {error ? (
-          <ErrorBanner
-            message={error}
-            variant={isWarning ? "warning" : "error"}
-          />
-        ) : null}
 
         <View className="mb-4">
           <Text className="mb-2 text-xs font-medium text-gray-500">
@@ -363,6 +401,7 @@ export default function LoginScreen({ navigation }: Props) {
           autoCorrect={false}
           keyboardType={loginMode === "email" ? "email-address" : "default"}
           textContentType={loginMode === "email" ? "emailAddress" : "username"}
+          forceLight
         />
 
         <FloatingLabelInput
@@ -373,6 +412,7 @@ export default function LoginScreen({ navigation }: Props) {
           autoCapitalize="none"
           autoCorrect={false}
           textContentType="password"
+          forceLight
         />
 
         {/* Ricordami */}
@@ -429,6 +469,48 @@ export default function LoginScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </Animated.View>
+
+      <BubbleModal
+        visible={verifyStatus === "success" || verifyStatus === "error"}
+        onRequestClose={() => setVerifyStatus("idle")}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full items-center overflow-hidden rounded-3xl border border-gray-200/50 p-6">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme="light"
+            tint="light"
+            intensity={90}
+          />
+          <View
+            className={`mb-4 rounded-full p-4 ${
+              verifyStatus === "success" ? "bg-green-100" : "bg-red-100"
+            }`}
+          >
+            {verifyStatus === "success" ? (
+              <CheckCircle size={40} color="#16A34A" />
+            ) : (
+              <XCircle size={40} color="#DC2626" />
+            )}
+          </View>
+          <Text className="mb-2 text-center text-xl font-semibold text-gray-900">
+            {verifyStatus === "success"
+              ? "Email confermata con successo"
+              : "Verifica non riuscita"}
+          </Text>
+          <Text className="mb-6 text-center text-gray-600">
+            {verifyMessage}
+          </Text>
+          <Pressable
+            onPress={() => setVerifyStatus("idle")}
+            className="w-full rounded-lg bg-blue-600 py-2.5"
+          >
+            <Text className="text-center font-medium text-white">
+              {verifyStatus === "success" ? "Accedi" : "Ok"}
+            </Text>
+          </Pressable>
+        </View>
+      </BubbleModal>
     </ScrollView>
   );
 }

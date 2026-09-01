@@ -2,6 +2,7 @@
 // Le chiamate di rete (URL, metodi, header, body) sono identiche all'originale:
 // cambia solo lo storage dei token, che qui è asincrono (AsyncStorage).
 import { API_URL } from "./config";
+import { invalidateCache } from "../utils/apiCache";
 import {
   clearTokens,
   getAccessToken,
@@ -30,6 +31,11 @@ export const login = async (
     const data = await response.json();
 
     if (response.ok) {
+      // Un login riuscito può seguire un logout mancato/uno switch account
+      // diretto: senza invalidare qui, la cache API (chiave per risorsa, non
+      // per utente) poteva ancora restituire per qualche secondo le liste
+      // del login precedente.
+      invalidateCache();
       return {
         success: true as const,
         accessToken: data.access as string,
@@ -179,6 +185,11 @@ export async function getCurrentUserJWT() {
 // 🔄 Logout locale
 export async function logout(): Promise<void> {
   await clearTokens();
+  // La cache API (liste/categorie/preferenze) è in memoria, chiave per
+  // risorsa e non per utente: senza invalidarla qui, un login successivo
+  // con un account diverso poteva ancora vedere per qualche secondo i dati
+  // del vecchio account dalla cache, anche con i token già corretti.
+  invalidateCache();
 }
 
 // 📝 Register
@@ -216,7 +227,20 @@ export const updateProfile = async (formData: FormData) => {
     },
     body: formData,
   });
-  return res.json();
+
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { error: text || `Errore ${res.status}` };
+  }
+
+  if (!res.ok) {
+    console.error("updateProfile fallita:", res.status, data);
+    return { ...data, ok: false, status: res.status };
+  }
+  return { ...data, ok: true, status: res.status };
 };
 
 // 🔐 Invia reset password
@@ -243,6 +267,13 @@ export const updatePassword = async (
     body: JSON.stringify({ password: newPassword }),
   });
   return res.json();
+};
+
+// ✅ Conferma verifica email da link (usata da VerifyEmail)
+export const confirmEmailVerification = async (uid: string, token: string) => {
+  const res = await fetch(`${API_URL}/verify-email/${uid}/${token}/`);
+  const data = await res.json();
+  return { ok: res.ok, data };
 };
 
 // 📧 Verifica email

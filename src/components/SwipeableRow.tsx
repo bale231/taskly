@@ -95,6 +95,12 @@ export default function SwipeableRow({
     // senza questi vincoli il pan intercettava anche lo scroll della lista.
     .activeOffsetX([-10, 10])
     .failOffsetY([-10, 10])
+    // Esclude i primi 25px dal bordo sinistro dall'area di rilevamento del
+    // gesto: senza questo, uno swipe che parte dal bordo (esattamente dove
+    // inizia lo swipe-back nativo di iOS per tornare indietro) veniva
+    // intercettato da questo Pan invece che dal gesto di navigazione,
+    // rendendo impossibile tornare indietro con lo swipe in questa schermata.
+    .hitSlop({ left: -25 })
     .onUpdate((e) => {
       // Parte sempre dalla posizione corrente (0 se chiusa, ±ACTION_WIDTH
       // se già ancorata aperta), così un secondo swipe sopra una riga già

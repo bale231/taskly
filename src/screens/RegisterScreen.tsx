@@ -1,31 +1,37 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { CheckCircle } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Image,
-  Modal,
   Pressable,
   ScrollView,
+  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { register } from "../api/auth";
-import ErrorBanner from "../components/ErrorBanner";
+import BubbleModal from "../components/BubbleModal";
 import FloatingLabelInput from "../components/FloatingLabelInput";
+import GlassSurface from "../components/GlassSurface";
+import { useAlert } from "../context/AlertContext";
 import { useNetwork } from "../context/NetworkContext";
+import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Register">;
 
 export default function RegisterScreen({ navigation }: Props) {
   const { isOnline } = useNetwork();
+  const { showAlert } = useAlert();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [error, setError] = useState("");
 
   const [passwordValid, setPasswordValid] = useState(true);
   const [passwordMatch, setPasswordMatch] = useState(true);
@@ -35,8 +41,6 @@ export default function RegisterScreen({ navigation }: Props) {
 
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formTranslateY = useRef(new Animated.Value(50)).current;
-  const modalOpacity = useRef(new Animated.Value(0)).current;
-  const modalScale = useRef(new Animated.Value(0.9)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -53,51 +57,38 @@ export default function RegisterScreen({ navigation }: Props) {
     ]).start();
   }, [formOpacity, formTranslateY]);
 
-  // Auto-dismiss error after 4 seconds
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(""), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
-
-  useEffect(() => {
-    if (showModal) {
-      modalOpacity.setValue(0);
-      modalScale.setValue(0.9);
-      Animated.parallel([
-        Animated.timing(modalOpacity, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(modalScale, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [showModal, modalOpacity, modalScale]);
-
-  // Stesse regole di validazione della webapp
   useEffect(() => {
     setPasswordValid(
       password.length >= 8 && /[A-Z]/.test(password) && /\d/.test(password)
     );
     setPasswordMatch(password === confirmPassword);
-    setEmailValid(email.includes("@"));
+    // Prima bastava un "@" per essere "valida": "a@" o "a@b" passavano.
+    // Formato standard nome@dominio.tld, senza spazi.
+    setEmailValid(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
   }, [password, confirmPassword, email]);
 
   const handleRegister = async () => {
-    if (!isOnline) {
-      setError(
-        "Sei offline. La registrazione richiede una connessione internet."
-      );
+    setEmailTouched(true);
+    setConfirmTouched(true);
+
+    if (!username.trim() || !email.trim() || !password || !confirmPassword) {
+      showAlert("warning", "Compila tutti i campi per registrarti.");
       return;
     }
-    if (!passwordValid || !passwordMatch || !emailValid) {
-      setError("Controlla i campi inseriti.");
+    if (!isOnline) {
+      showAlert("error", "Sei offline. La registrazione richiede una connessione internet.");
+      return;
+    }
+    if (!emailValid) {
+      showAlert("warning", "Inserisci un'email valida.");
+      return;
+    }
+    if (!passwordValid) {
+      showAlert("warning", "La password deve avere almeno 8 caratteri, una maiuscola e un numero.");
+      return;
+    }
+    if (!passwordMatch) {
+      showAlert("warning", "Le password non corrispondono.");
       return;
     }
 
@@ -106,17 +97,21 @@ export default function RegisterScreen({ navigation }: Props) {
 
       // Il backend ritorna: "Registrazione completata! Controlla la tua email..."
       if (res.message && res.message.includes("Registrazione completata")) {
-        setError("");
         setShowModal(true);
-      } else if (res.error?.includes("Username")) {
-        setError("Username già esistente.");
-      } else if (res.error?.includes("Email")) {
-        setError("Email già registrata.");
+      } else if (/username/i.test(res.error ?? "")) {
+        showAlert("error", "Username già esistente.");
+      } else if (/email/i.test(res.error ?? "")) {
+        // Copre sia "Email già registrata" sia errori lato server come
+        // "Errore invio email di verifica" (SMTP giù, non un problema dei
+        // dati inseriti): mostriamo il messaggio del backend così com'è
+        // invece del generico "Errore nella registrazione", che nascondeva
+        // completamente la causa reale.
+        showAlert("error", res.error);
       } else {
-        setError("Errore nella registrazione.");
+        showAlert("error", res.error || "Errore nella registrazione.");
       }
     } catch {
-      setError("Errore imprevisto, riprova.");
+      showAlert("error", "Errore imprevisto, riprova.");
     }
   };
 
@@ -146,8 +141,6 @@ export default function RegisterScreen({ navigation }: Props) {
           />
         </View>
 
-        {error ? <ErrorBanner message={error} /> : null}
-
         <FloatingLabelInput
           label="Username"
           value={username}
@@ -155,6 +148,7 @@ export default function RegisterScreen({ navigation }: Props) {
           autoCapitalize="none"
           autoCorrect={false}
           textContentType="username"
+          forceDark
         />
 
         <FloatingLabelInput
@@ -169,6 +163,7 @@ export default function RegisterScreen({ navigation }: Props) {
           error={
             !emailValid && emailTouched ? "Inserisci una email valida" : null
           }
+          forceDark
         />
 
         <FloatingLabelInput
@@ -183,6 +178,7 @@ export default function RegisterScreen({ navigation }: Props) {
               ? "Almeno 8 caratteri, una maiuscola e un numero"
               : null
           }
+          forceDark
         />
 
         <FloatingLabelInput
@@ -198,6 +194,7 @@ export default function RegisterScreen({ navigation }: Props) {
               ? "Le password non corrispondono"
               : null
           }
+          forceDark
         />
 
         <Pressable
@@ -215,35 +212,38 @@ export default function RegisterScreen({ navigation }: Props) {
         </View>
       </Animated.View>
 
-      <Modal visible={showModal} transparent animationType="none">
-        <View className="flex-1 items-center justify-center bg-black/60">
-          <Animated.View
-            style={{
-              opacity: modalOpacity,
-              transform: [{ scale: modalScale }],
-              width: "90%",
-              maxWidth: 448,
+      <BubbleModal
+        visible={showModal}
+        onRequestClose={() => setShowModal(false)}
+        contentStyle={{ width: "100%", maxWidth: 320 }}
+      >
+        <View className="w-full items-center overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={90}
+          />
+          <View className="mb-4 rounded-full bg-green-100 p-4 dark:bg-green-900/60">
+            <CheckCircle size={40} color="#16A34A" />
+          </View>
+          <Text className="mb-2 text-center text-xl font-semibold text-gray-900 dark:text-white">
+            Registrazione completata!
+          </Text>
+          <Text className="mb-6 text-center text-gray-600 dark:text-gray-300">
+            Conferma la mail per effettuare il login.
+          </Text>
+          <Pressable
+            onPress={() => {
+              setShowModal(false);
+              navigation.replace("Login");
             }}
-            className="items-center rounded-2xl bg-gray-900 p-6"
+            className="w-full rounded-lg bg-blue-600 py-2.5"
           >
-            <Text className="mb-2 text-2xl font-bold text-white">
-              ✅ Registrazione completata!
-            </Text>
-            <Text className="mb-6 text-center text-white">
-              Conferma la mail per effettuare il login.
-            </Text>
-            <Pressable
-              onPress={() => {
-                setShowModal(false);
-                navigation.replace("Login");
-              }}
-              className="rounded-lg bg-green-600 px-5 py-2"
-            >
-              <Text className="text-white">Ok</Text>
-            </Pressable>
-          </Animated.View>
+            <Text className="text-center font-medium text-white">Ok</Text>
+          </Pressable>
         </View>
-      </Modal>
+      </BubbleModal>
     </ScrollView>
   );
 }

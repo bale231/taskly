@@ -35,7 +35,7 @@ export default function AnimatedSplashScreen() {
       <Animated.View style={animatedStyle}>
         <Image
           source={require("../../assets/splash-icon.png")}
-          style={{ width: 220, height: 220, resizeMode: "contain" }}
+          style={{ width: 220, height: 220, borderRadius: 48, resizeMode: "contain" }}
         />
       </Animated.View>
     </View>

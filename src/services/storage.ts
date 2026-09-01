@@ -53,6 +53,7 @@ export async function setRefreshToken(refreshToken: string): Promise<void> {
 
 export async function clearTokens(): Promise<void> {
   await AsyncStorage.multiRemove([ACCESS_TOKEN, REFRESH_TOKEN, PERSISTENT, THEME]);
+  await clearHomeCache();
 }
 
 export async function isPersistentSession(): Promise<boolean> {
@@ -95,4 +96,73 @@ export async function getLastListsCount(): Promise<number | null> {
 
 export async function setLastListsCount(count: number): Promise<void> {
   await AsyncStorage.setItem(LISTS_COUNT, String(count));
+}
+
+const HOME_CACHE_LISTS = "cache:home:lists";
+const HOME_CACHE_CATEGORIES = "cache:home:categories";
+const HOME_CACHE_USERNAME = "cache:home:username";
+
+/**
+ * Cache persistente di liste/categorie: mostrata subito all'apertura
+ * dell'app invece dello skeleton, mentre una fetch reale in background la
+ * aggiorna silenziosamente se qualcosa è cambiato nel frattempo — evita che
+ * ogni apertura mostri un caricamento visibile per dati che nella stragrande
+ * maggioranza dei casi non sono cambiati dall'ultima sessione.
+ *
+ * Scopata per username: se l'utente loggato è diverso da quello a cui
+ * appartiene la cache salvata, viene considerata assente invece di rischiare
+ * di mostrare per un istante i dati di un altro account (stesso bug visto
+ * con la cache API in memoria).
+ */
+export async function getHomeCache<T>(
+  key: "lists" | "categories",
+  currentUsername: string
+): Promise<T | null> {
+  const savedUsername = await AsyncStorage.getItem(HOME_CACHE_USERNAME);
+  if (savedUsername !== currentUsername) return null;
+
+  const raw = await AsyncStorage.getItem(
+    key === "lists" ? HOME_CACHE_LISTS : HOME_CACHE_CATEGORIES
+  );
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function setHomeCache(
+  key: "lists" | "categories",
+  data: unknown,
+  username: string
+): Promise<void> {
+  await AsyncStorage.multiSet([
+    [key === "lists" ? HOME_CACHE_LISTS : HOME_CACHE_CATEGORIES, JSON.stringify(data)],
+    [HOME_CACHE_USERNAME, username],
+  ]);
+}
+
+export async function clearHomeCache(): Promise<void> {
+  await AsyncStorage.multiRemove([HOME_CACHE_LISTS, HOME_CACHE_CATEGORIES, HOME_CACHE_USERNAME]);
+}
+
+/**
+ * Stessa idea di getHomeCache/setHomeCache ma per i todo di UNA lista
+ * specifica (ListDetailScreen): chiave per listId, non serve lo username
+ * dato che l'id della lista è già univoco e non condiviso tra account
+ * diversi (una lista di un altro utente ha comunque un id diverso).
+ */
+export async function getListTodosCache<T>(listId: number | string): Promise<T | null> {
+  const raw = await AsyncStorage.getItem(`cache:list:${listId}`);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function setListTodosCache(listId: number | string, data: unknown): Promise<void> {
+  await AsyncStorage.setItem(`cache:list:${listId}`, JSON.stringify(data));
 }

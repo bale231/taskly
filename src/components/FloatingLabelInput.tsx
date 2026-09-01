@@ -9,19 +9,37 @@ import {
   type TextInputProps,
 } from "react-native";
 
-/**
- * Equivalente RN del pattern floating-label che nella webapp era fatto
- * con le pseudo-classi Tailwind `peer-placeholder-shown` / `peer-focus`.
- * Quelle non esistono in RN, quindi la label è animata a mano.
- */
 interface Props extends Omit<TextInputProps, "placeholder"> {
   label: string;
   /** Mostra l'occhio per rivelare/nascondere il testo. */
   isPassword?: boolean;
   /** Messaggio di validazione mostrato sotto il campo. */
   error?: string | null;
+  /**
+   * Forza lo stile chiaro (sfondo bianco, testo scuro) ignorando il tema
+   * globale dell'app: usato in Login, che resta sempre a tema chiaro anche
+   * se altrove nell'app è attivo il tema scuro — senza questo, la classe
+   * `dark:` di questo componente seguiva il tema globale e rendeva l'input
+   * scuro su uno sfondo chiaro fisso.
+   */
+  forceLight?: boolean;
+  /**
+   * Forza lo stile scuro (sfondo grigio scuro, testo bianco) ignorando il
+   * tema globale: usato in Register, che resta sempre a tema scuro. Come
+   * `forceLight`, ma nella direzione opposta — senza questo la classe
+   * `dark:` seguiva il tema globale invece dello sfondo scuro fisso della
+   * schermata, rendendo il testo scritto illeggibile (scuro su scuro).
+   */
+  forceDark?: boolean;
 }
 
+/**
+ * Floating label: al tap sale in alto (come al solito), ma mentre si scrive
+ * sfuma via con l'opacità invece di restare visibile sopra il testo; se il
+ * campo si svuota di nuovo (restando a fuoco) l'etichetta risale in
+ * opacità. Non è un semplice placeholder nativo perché deve poter avere
+ * questi tre stati indipendenti (posizione via focus, opacità via contenuto).
+ */
 export default function FloatingLabelInput({
   label,
   isPassword = false,
@@ -29,6 +47,8 @@ export default function FloatingLabelInput({
   value,
   onFocus,
   onBlur,
+  forceLight = false,
+  forceDark = false,
   ...rest
 }: Props) {
   const [focused, setFocused] = useState(false);
@@ -46,40 +66,31 @@ export default function FloatingLabelInput({
     setRevealed((prev) => !prev);
   };
 
-  // La label sta in alto quando il campo è attivo o già compilato.
+  // La posizione (in alto/al centro) segue solo il focus: sale al tap,
+  // torna al centro quando il campo perde il focus (se vuoto).
   const floating = focused || Boolean(value);
-  const anim = useRef(new Animated.Value(floating ? 1 : 0)).current;
+  const positionAnim = useRef(new Animated.Value(floating ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.timing(anim, {
+    Animated.timing(positionAnim, {
       toValue: floating ? 1 : 0,
       duration: 150,
       useNativeDriver: true,
     }).start();
-  }, [anim, floating]);
+  }, [positionAnim, floating]);
 
-  // Flip della label quando il testo cambia (es. Username <-> Email):
-  // nella webapp era gsap che portava rotateY a 90°, cambiava il testo
-  // a scatto, poi tornava da -90° a 0°. Qui stesso schema con Animated.
-  const flip = useRef(new Animated.Value(0)).current;
-  const previousLabel = useRef(label);
+  // L'opacità segue solo il contenuto: sparisce mentre c'è testo scritto,
+  // indipendentemente dal fatto che l'etichetta sia salita o no.
+  const hasValue = Boolean(value);
+  const opacityAnim = useRef(new Animated.Value(hasValue ? 0 : 1)).current;
 
   useEffect(() => {
-    if (previousLabel.current === label) return;
-    previousLabel.current = label;
-
-    flip.setValue(0);
-    Animated.timing(flip, {
-      toValue: 1,
+    Animated.timing(opacityAnim, {
+      toValue: hasValue ? 0 : 1,
       duration: 150,
       useNativeDriver: true,
     }).start();
-  }, [label, flip]);
-
-  const flipRotateY = flip.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: ["0deg", "90deg", "0deg"],
-  });
+  }, [opacityAnim, hasValue]);
 
   const borderColor = error
     ? "#EF4444"
@@ -90,8 +101,17 @@ export default function FloatingLabelInput({
   return (
     <View className="mb-4 w-full">
       <View
-        className="relative w-full justify-end rounded bg-white dark:bg-gray-700"
-        style={{ borderWidth: 1, borderColor, height: 60 }}
+        className={
+          forceLight || forceDark
+            ? "relative w-full justify-center rounded"
+            : "relative w-full justify-center rounded bg-white dark:bg-gray-700"
+        }
+        style={{
+          borderWidth: 1,
+          borderColor,
+          height: 60,
+          backgroundColor: forceLight ? "#FFFFFF" : forceDark ? "#374151" : undefined,
+        }}
       >
         <Animated.Text
           // pointerEvents none: la label non deve rubare il tap all'input
@@ -102,39 +122,63 @@ export default function FloatingLabelInput({
             top: 21,
             fontSize: 16,
             color: error ? "#EF4444" : focused ? "#3B82F6" : "#9CA3AF",
+            opacity: opacityAnim,
             // Il rimpicciolimento/spostamento è transform (translateY + scale)
             // invece di top/fontSize animati: quelli non sono supportati dal
             // native animated module, e mischiare driver JS e nativo sullo
             // stesso nodo fa crashare Reanimated ("moved to native earlier").
             transform: [
               {
-                translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [0, -11] }),
+                translateY: positionAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -11] }),
               },
               {
-                scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.75] }),
+                scale: positionAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.75] }),
               },
-              { rotateY: flipRotateY },
             ],
           }}
         >
           {label}
         </Animated.Text>
 
-        <TextInput
-          value={value}
-          secureTextEntry={isPassword && !revealed}
-          className="px-4 pb-2 pt-6 text-sm text-gray-900 dark:text-white"
-          style={{ height: 58 }}
-          onFocus={(e) => {
-            setFocused(true);
-            onFocus?.(e);
+        <Animated.View
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: 21,
+            height: 22,
+            transform: [
+              {
+                translateY: positionAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 10] }),
+              },
+            ],
           }}
-          onBlur={(e) => {
-            setFocused(false);
-            onBlur?.(e);
-          }}
-          {...rest}
-        />
+        >
+          <TextInput
+            value={value}
+            secureTextEntry={isPassword && !revealed}
+            className={
+              forceLight || forceDark
+                ? "px-4"
+                : "px-4 text-gray-900 dark:text-white"
+            }
+            style={{
+              fontSize: 16,
+              height: 22,
+              paddingVertical: 0,
+              color: forceLight ? "#111827" : forceDark ? "#FFFFFF" : undefined,
+            }}
+            onFocus={(e) => {
+              setFocused(true);
+              onFocus?.(e);
+            }}
+            onBlur={(e) => {
+              setFocused(false);
+              onBlur?.(e);
+            }}
+            {...rest}
+          />
+        </Animated.View>
 
         {isPassword && (
           <Pressable

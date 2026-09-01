@@ -10,8 +10,8 @@ import {
   View,
 } from "react-native";
 import { requestPasswordReset } from "../api/auth";
-import ErrorBanner from "../components/ErrorBanner";
 import FloatingLabelInput from "../components/FloatingLabelInput";
+import { useAlert } from "../context/AlertContext";
 import { useNetwork } from "../context/NetworkContext";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -19,10 +19,12 @@ type Props = NativeStackScreenProps<RootStackParamList, "ForgotPassword">;
 
 export default function ForgotPasswordScreen({ navigation }: Props) {
   const { isOnline } = useNetwork();
+  const { showAlert } = useAlert();
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const formOpacity = useRef(new Animated.Value(0)).current;
   const formTranslateY = useRef(new Animated.Value(50)).current;
@@ -44,14 +46,6 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       }),
     ]).start();
   }, [formOpacity, formTranslateY]);
-
-  // Auto-dismiss error after 4 seconds
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => setError(""), 4000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
 
   useEffect(() => {
     if (!success) return;
@@ -82,15 +76,20 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
   }, [success, successOpacity, successScale, checkScale]);
 
   const handleSubmit = async () => {
+    if (!email.trim()) {
+      showAlert("warning", "Inserisci la tua email.");
+      return;
+    }
+    if (!emailValid) {
+      showAlert("warning", "Inserisci un'email valida.");
+      return;
+    }
     if (!isOnline) {
-      setError(
-        "Sei offline. Questa operazione richiede una connessione internet."
-      );
+      showAlert("error", "Sei offline. Questa operazione richiede una connessione internet.");
       return;
     }
 
     setIsLoading(true);
-    setError("");
 
     try {
       const { ok, data } = await requestPasswordReset(email);
@@ -109,13 +108,13 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
             lowerMessage.includes("non esiste") ||
             lowerMessage.includes("invalid"))
         ) {
-          setError("Email non registrata, ritenta con un email corretta.");
+          showAlert("error", "Email non registrata, ritenta con un email corretta.");
         } else {
-          setError(data.message || "Errore nell'invio dell'email");
+          showAlert("error", data.message || "Errore nell'invio dell'email");
         }
       }
     } catch {
-      setError("Errore di connessione");
+      showAlert("error", "Errore di connessione. Riprova più tardi.");
     } finally {
       setIsLoading(false);
     }
@@ -202,8 +201,6 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
             Inserisci la tua email e ti invieremo un link per reimpostare la
             password.
           </Text>
-
-          {error ? <ErrorBanner message={error} /> : null}
 
           <FloatingLabelInput
             label="Email"

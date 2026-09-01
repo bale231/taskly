@@ -37,6 +37,7 @@ export interface TodoList {
 export interface Todo {
   id: number;
   title: string;
+  description?: string | null;
   completed: boolean;
   quantity?: number | null;
   unit?: string | null;

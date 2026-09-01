@@ -1,4 +1,4 @@
-import { NavigationContainer, type LinkingOptions } from "@react-navigation/native";
+import { getStateFromPath, NavigationContainer, type LinkingOptions } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import * as Linking from "expo-linking";
 import FindUsersScreen from "../screens/FindUsersScreen";
@@ -19,6 +19,11 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
  * Il link di reset password arriva per email e nella webapp puntava a
  * /reset-password/:uid/:token. Qui lo stesso path apre l'app via
  * taskly://reset-password/:uid/:token.
+ *
+ * Il link di verifica email (taskly://verify-email/:uid/:token) invece non
+ * ha una sua schermata: naviga a Login stesso con `verifyEmail: {uid,
+ * token}`, che chiama l'API di verifica e mostra l'esito in una modale
+ * sopra il login — niente schermata intermedia da attraversare.
  */
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: [Linking.createURL("/"), "taskly://"],
@@ -35,6 +40,16 @@ const linking: LinkingOptions<RootStackParamList> = {
       FriendRequests: "friend-requests",
       Friends: "friends",
     },
+  },
+  getStateFromPath: (path, options) => {
+    const match = path.match(/^\/?verify-email\/([^/]+)\/([^/]+)\/?$/);
+    if (match) {
+      const [, uid, token] = match;
+      return {
+        routes: [{ name: "Login", params: { verifyEmail: { uid, token } } }],
+      };
+    }
+    return getStateFromPath(path, options);
   },
 };
 

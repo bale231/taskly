@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   CheckSquare,
+  GripVertical,
   ListFilter,
   Pencil,
   Plus,
@@ -22,14 +23,7 @@ import {
   View,
 } from "react-native";
 import DraggableFlatList from "react-native-draggable-flatlist";
-import Animated, {
-  FadeInDown,
-  FadeOutUp,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   createTodo,
@@ -41,19 +35,23 @@ import {
   toggleTodo,
   updateSortOrder,
   updateTodo,
+  type ListDetailsResponse,
 } from "../api/todos";
 import { getListShares } from "../api/sharing";
 import AnimatedCheckbox from "../components/AnimatedCheckbox";
 import BubbleModal from "../components/BubbleModal";
 import DraggableTodoRow from "../components/DraggableTodoRow";
+import BubbleTapEffect, { type BubbleTapEffectRef } from "../components/BubbleTapEffect";
 import GlassSurface from "../components/GlassSurface";
 import { GlassBottomSheetBackdrop, GlassBottomSheetBackground } from "../components/GlassBottomSheet";
 import MarqueeText from "../components/MarqueeText";
 import MoveTodoModal from "../components/MoveTodoModal";
 import SwipeableRow from "../components/SwipeableRow";
 import TodoRowSkeleton from "../components/TodoRowSkeleton";
+import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
+import { getListTodosCache, setListTodosCache } from "../services/storage";
 import type { Todo, TodoSortOption } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ListDetail">;
@@ -66,12 +64,14 @@ const HEADER_BG: Record<string, string> = {
   purple: "bg-purple-50 dark:bg-purple-950",
 };
 
-const ADD_BUTTON_BG: Record<string, string> = {
-  blue: "bg-blue-600",
-  green: "bg-green-600",
-  yellow: "bg-yellow-500",
-  red: "bg-red-600",
-  purple: "bg-purple-600",
+/** Colore del vetro del bottone "+": tintColor nativo di GlassSurface
+ * (non può leggere una className Tailwind, serve l'hex diretto). */
+const ADD_BUTTON_HEX: Record<string, string> = {
+  blue: "#2563EB",
+  green: "#16A34A",
+  yellow: "#EAB308",
+  red: "#DC2626",
+  purple: "#9333EA",
 };
 
 interface TodoRowProps {
@@ -81,6 +81,9 @@ interface TodoRowProps {
   selected: boolean;
   canDrag: boolean;
   isActive: boolean;
+  /** Indice nella lista visibile: usato solo per lo stagger del flip 3D
+   * della checkbox quando editMode cambia (una riga dopo l'altra). */
+  index: number;
   onDrag: () => void;
   onToggle: (todoId: number) => void;
   onToggleSelect: (todoId: number) => void;
@@ -104,6 +107,7 @@ const TodoRow = memo(function TodoRow({
   selected,
   canDrag,
   isActive,
+  index,
   onDrag,
   onToggle,
   onToggleSelect,
@@ -113,7 +117,7 @@ const TodoRow = memo(function TodoRow({
   onConfirmNeeded,
 }: TodoRowProps) {
   return (
-    <DraggableTodoRow onDrag={onDrag} isActive={isActive} disabled={!canDrag || editMode}>
+    <DraggableTodoRow isActive={isActive}>
       <SwipeableRow
         disabled={editMode}
         onConfirmNeeded={onConfirmNeeded}
@@ -134,21 +138,20 @@ const TodoRow = memo(function TodoRow({
       >
         <View className="flex-row items-center rounded-xl border border-gray-200/50 bg-white/70 px-5 py-4 dark:border-white/20 dark:bg-gray-800/70">
           <View className="mr-4">
-            {editMode ? (
-              <AnimatedCheckbox
-                checked={selected}
-                onPress={() => onToggleSelect(todo.id)}
-                checkedColor="#2563EB"
-                uncheckedColor="#9CA3AF"
-                size={26}
-              />
-            ) : (
-              <AnimatedCheckbox
-                onPress={() => onToggle(todo.id)}
-                checkedColor={todo.completed ? "#9CA3AF" : "#16A34A"}
-                size={26}
-              />
-            )}
+            <AnimatedCheckbox
+              size={26}
+              checked={todo.completed}
+              checkedColor="#16A34A"
+              uncheckedColor="#BFBFC0"
+              settledColor="#9CA3AF"
+              onPress={() => onToggle(todo.id)}
+              editMode={editMode}
+              editChecked={selected}
+              editCheckedColor="#2563EB"
+              editUncheckedColor="#9CA3AF"
+              onEditPress={() => onToggleSelect(todo.id)}
+              flipDelay={Math.min(index * 15, 300)}
+            />
           </View>
 
           <View className="flex-1">
@@ -168,12 +171,26 @@ const TodoRow = memo(function TodoRow({
                 </View>
               )}
             </View>
+            {todo.description && (
+              <Text
+                numberOfLines={2}
+                className="mt-1 text-sm text-gray-500 dark:text-gray-400"
+              >
+                {todo.description}
+              </Text>
+            )}
             {isShared && todo.created_by && (
               <Text className="mt-1 text-xs text-purple-600 dark:text-purple-400">
                 Aggiunta da {todo.created_by.full_name}
               </Text>
             )}
           </View>
+
+          {canDrag && !editMode && (
+            <Pressable onLongPress={onDrag} disabled={isActive} className="ml-2 p-1.5">
+              <GripVertical size={18} color="#9CA3AF" />
+            </Pressable>
+          )}
 
           {editMode && (
             <View className="ml-2 flex-row gap-2">
@@ -214,12 +231,15 @@ function sortTodos(todos: Todo[], sortBy: TodoSortOption): Todo[] {
 
 export default function ListDetailScreen({ route, navigation }: Props) {
   const { listId, todosCount } = route.params;
-  // Senza un hint (es. deep link diretto, non passando dalla Home) si mostra
-  // un numero di skeleton di default invece di indovinare.
-  const skeletonCount = todosCount && todosCount > 0 ? todosCount : 5;
+  // `todosCount` distingue "assente" (deep link diretto, senza passare dalla
+  // Home: qui si indovina un default) da "0" (lista vuota, nessuno skeleton
+  // da mostrare) — `todosCount ?? 5` invece di un check `&&` che tratterebbe
+  // 0 come falsy e mostrerebbe 5 skeleton finti per una lista vuota.
+  const skeletonCount = todosCount ?? 5;
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const { showAlert } = useAlert();
 
   const [todos, setTodos] = useState<Todo[]>([]);
   const [listName, setListName] = useState("");
@@ -232,6 +252,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   const sortMenuRef = useRef<BottomSheetModal>(null);
 
   const [editMode, setEditMode] = useState(false);
+  const editBubbleRef = useRef<BubbleTapEffectRef>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
 
@@ -243,16 +264,6 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     message: string;
     onConfirm: () => void;
   } | null>(null);
-
-  // Transizione smooth del colore del FAB "Modifica" invece dello scatto
-  // grigio/verde.
-  const editFabProgress = useSharedValue(0);
-  useEffect(() => {
-    editFabProgress.value = withTiming(editMode ? 1 : 0, { duration: 200 });
-  }, [editMode, editFabProgress]);
-  const editFabStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(editFabProgress.value, [0, 1], ["#374151", "#16A34A"]),
-  }));
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -273,44 +284,54 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   const [title, setTitle] = useState("");
   const [quantityValue, setQuantityValue] = useState("");
   const [unitValue, setUnitValue] = useState("");
+  const [descriptionValue, setDescriptionValue] = useState("");
   const [editedTodo, setEditedTodo] = useState<Todo | null>(null);
 
   // Modale sposta
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [todoToMove, setTodoToMove] = useState<Todo | null>(null);
   const [allLists, setAllLists] = useState<{ id: number; name: string; color: string }[]>([]);
+  // Modale sposta multiplo, per l'azione bulk dal selettore in edit mode.
+  const [showBulkMoveModal, setShowBulkMoveModal] = useState(false);
 
-  const fetchTodos = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await fetchListDetails(listId);
-      if (!data) return;
+  // `silent`: quando la cache locale ha già mostrato le todo, la fetch di
+  // aggiornamento gira dietro le quinte senza far ricomparire lo skeleton.
+  const fetchTodos = useCallback(
+    async (silent = false) => {
+      if (!silent) setIsLoading(true);
+      try {
+        const data = await fetchListDetails(listId);
+        if (!data) return;
 
-      const todosWithIndex: Todo[] = data.todos.map((t: Todo, index: number) => ({
-        ...t,
-        _originalIndex: t._originalIndex ?? index,
-      }));
+        const todosWithIndex: Todo[] = data.todos.map((t: Todo, index: number) => ({
+          ...t,
+          _originalIndex: t._originalIndex ?? index,
+        }));
 
-      const effectiveSort: TodoSortOption =
-        data.sort_order === "alphabetical" || data.sort_order === "completed"
-          ? data.sort_order
-          : "created";
+        const effectiveSort: TodoSortOption =
+          data.sort_order === "alphabetical" || data.sort_order === "completed"
+            ? data.sort_order
+            : "created";
 
-      setSortOption(effectiveSort);
-      setTodos(sortTodos(todosWithIndex, effectiveSort));
-      setListName(data.name);
-      setListColor(data.color || "blue");
-      setIsShared(data.is_shared || false);
+        setSortOption(effectiveSort);
+        setTodos(sortTodos(todosWithIndex, effectiveSort));
+        setListName(data.name);
+        setListColor(data.color || "blue");
+        setIsShared(data.is_shared || false);
+        setListTodosCache(listId, data);
 
-      getListShares(listId)
-        .then((shares) => setSharedWith(shares.map((s) => ({ full_name: s.full_name }))))
-        .catch(() => setSharedWith([]));
-    } catch (err) {
-      console.error("Errore nel caricamento della lista:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [listId]);
+        getListShares(listId)
+          .then((shares) => setSharedWith(shares.map((s) => ({ full_name: s.full_name }))))
+          .catch(() => setSharedWith([]));
+      } catch (err) {
+        console.error("Errore nel caricamento della lista:", err);
+        if (!silent) showAlert("error", "Impossibile caricare la lista. Controlla la connessione.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [listId, showAlert]
+  );
 
   const loadAllLists = useCallback(async () => {
     try {
@@ -318,13 +339,37 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       if (Array.isArray(lists)) setAllLists(lists);
     } catch (err) {
       console.error("Errore caricamento liste per lo spostamento:", err);
+      showAlert("error", "Impossibile caricare le altre liste.");
     }
-  }, []);
+  }, [showAlert]);
 
   useEffect(() => {
-    fetchTodos();
+    // Cache locale mostrata subito, prima di qualunque fetch di rete: se
+    // presente, la fetch reale che segue è "silenziosa" (aggiorna senza
+    // far ricomparire lo skeleton); altrimenti è quella visibile normale.
+    const load = async () => {
+      const cached = await getListTodosCache<ListDetailsResponse>(listId);
+      if (cached) {
+        const todosWithIndex: Todo[] = cached.todos.map((t: Todo, index: number) => ({
+          ...t,
+          _originalIndex: t._originalIndex ?? index,
+        }));
+        const effectiveSort: TodoSortOption =
+          cached.sort_order === "alphabetical" || cached.sort_order === "completed"
+            ? cached.sort_order
+            : "created";
+        setSortOption(effectiveSort);
+        setTodos(sortTodos(todosWithIndex, effectiveSort));
+        setListName(cached.name);
+        setListColor(cached.color || "blue");
+        setIsShared(cached.is_shared || false);
+        setIsLoading(false);
+      }
+      fetchTodos(!!cached);
+    };
+    load();
     loadAllLists();
-  }, [fetchTodos, loadAllLists]);
+  }, [fetchTodos, loadAllLists, listId]);
 
   const handleToggle = (todoId: number) => {
     setTodos((prev) => {
@@ -340,29 +385,46 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   };
 
   const handleCreateTodo = async () => {
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      showAlert("warning", "Inserisci il nome della task.");
+      return;
+    }
 
     let qty: number | null = null;
     let unit: string | null = null;
     if (quantityValue && unitValue.trim()) {
       qty = parseInt(quantityValue, 10);
-      if (Number.isNaN(qty) || qty <= 0) return;
+      if (Number.isNaN(qty) || qty <= 0) {
+        showAlert("warning", "Inserisci una quantità valida.");
+        return;
+      }
       unit = unitValue;
     } else if (quantityValue || unitValue.trim()) {
+      showAlert("warning", "Inserisci sia la quantità che l'unità di misura.");
       return;
     }
 
-    const created = await createTodo(listId, title, qty, unit);
-    if (created?.id) {
-      setTodos((prev) => {
-        const shifted = prev.map((t) => ({ ...t, _originalIndex: (t._originalIndex ?? 0) + 1 }));
-        return [{ ...created, _originalIndex: -1 } as Todo, ...shifted];
-      });
+    try {
+      const created = await createTodo(listId, title, qty, unit, descriptionValue.trim() || null);
+      if (created?.id) {
+        setTodos((prev) => {
+          const shifted = prev.map((t) => ({ ...t, _originalIndex: (t._originalIndex ?? 0) + 1 }));
+          return [{ ...created, _originalIndex: -1 } as Todo, ...shifted];
+        });
+      } else {
+        showAlert("error", "Impossibile creare la task. Riprova.");
+        return;
+      }
+    } catch (err) {
+      console.error("Errore nella creazione della task:", err);
+      showAlert("error", "Errore di connessione. Riprova più tardi.");
+      return;
     }
 
     setTitle("");
     setQuantityValue("");
     setUnitValue("");
+    setDescriptionValue("");
     setShowQuantityModal(false);
   };
 
@@ -371,12 +433,24 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     setTodos((prev) => {
       const updated = prev.map((t) =>
         t.id === editedTodo.id
-          ? { ...t, title: editedTodo.title, quantity: editedTodo.quantity, unit: editedTodo.unit }
+          ? {
+              ...t,
+              title: editedTodo.title,
+              quantity: editedTodo.quantity,
+              unit: editedTodo.unit,
+              description: editedTodo.description,
+            }
           : t
       );
       return sortOption === "alphabetical" ? sortTodos(updated, "alphabetical") : updated;
     });
-    updateTodo(editedTodo.id, editedTodo.title, editedTodo.quantity, editedTodo.unit);
+    updateTodo(
+      editedTodo.id,
+      editedTodo.title,
+      editedTodo.quantity,
+      editedTodo.unit,
+      editedTodo.description
+    );
     setEditedTodo(null);
   };
 
@@ -386,6 +460,31 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     setShowMoveModal(false);
     setTodoToMove(null);
     moveTodo(todoToMove.id, newListId);
+  };
+
+  const handleBulkMove = (newListId: number) => {
+    setTodos((prev) => prev.filter((t) => !selectedIds.includes(t.id)));
+    selectedIds.forEach((id) => moveTodo(id, newListId));
+    setSelectedIds([]);
+    setShowBulkMoveModal(false);
+  };
+
+  // Se anche una sola delle selezionate è ancora da fare, "completa tutte";
+  // altrimenti (sono già tutte completate) "riapri tutte" — stesso criterio
+  // usato per la spunta "seleziona tutte" più sotto.
+  const bulkToggleTarget = selectedIds.some(
+    (id) => !todos.find((t) => t.id === id)?.completed
+  );
+
+  const handleBulkToggleComplete = () => {
+    setTodos((prev) =>
+      prev.map((t) => (selectedIds.includes(t.id) ? { ...t, completed: bulkToggleTarget } : t))
+    );
+    selectedIds.forEach((id) => {
+      const current = todos.find((t) => t.id === id);
+      if (current && current.completed !== bulkToggleTarget) toggleTodo(id);
+    });
+    setSelectedIds([]);
   };
 
   // `data` è il nuovo array già riordinato da DraggableFlatList (calcolato
@@ -439,9 +538,17 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         </View>
         <Pressable
           onPress={() => navigation.goBack()}
-          className="flex-row items-center gap-2 rounded-xl border border-gray-200/50 bg-white/60 px-4 py-2 dark:border-white/20 dark:bg-gray-800/60"
+          className="overflow-hidden rounded-xl border border-gray-200/50 dark:border-white/20"
         >
-          <ArrowLeft size={20} color="#374151" />
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={80}
+          />
+          <View className="flex-row items-center gap-2 px-4 py-3">
+            <ArrowLeft size={20} color={isDark ? "#E5E7EB" : "#374151"} />
+          </View>
         </Pressable>
       </View>
 
@@ -472,9 +579,20 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         />
         <Pressable
           onPress={() => setShowQuantityModal(true)}
-          className={`rounded-xl p-3 ${ADD_BUTTON_BG[listColor] ?? ADD_BUTTON_BG.blue}`}
+          className="overflow-hidden rounded-xl"
         >
-          <Plus size={18} color="#FFFFFF" />
+          <GlassSurface
+            style={StyleSheet.absoluteFill}
+            colorScheme={isDark ? "dark" : "light"}
+            tint={isDark ? "dark" : "light"}
+            intensity={80}
+          />
+          <View
+            className="p-3.5"
+            style={{ backgroundColor: ADD_BUTTON_HEX[listColor] ?? ADD_BUTTON_HEX.blue, opacity: 0.55 }}
+          >
+            <Plus size={20} color="#FFFFFF" />
+          </View>
         </Pressable>
       </View>
     </View>
@@ -511,12 +629,37 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           </Pressable>
 
           {selectedIds.length > 0 && (
-            <Pressable
-              onPress={() => setShowBulkConfirm(true)}
-              className="mt-3 self-start rounded-lg bg-red-600 px-4 py-2"
+            <Animated.View
+              entering={FadeIn.duration(180)}
+              exiting={FadeOut.duration(140)}
+              className="mt-3 flex-row gap-2"
             >
-              <Text className="text-white">Elimina selezionate ({selectedIds.length})</Text>
-            </Pressable>
+              <Pressable
+                onPress={handleBulkToggleComplete}
+                className="flex-row items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2"
+              >
+                <CheckSquare size={16} color="#FFFFFF" />
+                <Text className="text-sm font-medium text-white">
+                  {bulkToggleTarget ? "Completa" : "Riapri"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowBulkMoveModal(true)}
+                className="flex-row items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2"
+              >
+                <ArrowRightLeft size={16} color="#FFFFFF" />
+                <Text className="text-sm font-medium text-white">Sposta</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowBulkConfirm(true)}
+                className="flex-row items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2"
+              >
+                <Trash size={16} color="#FFFFFF" />
+                <Text className="text-sm font-medium text-white">
+                  Elimina ({selectedIds.length})
+                </Text>
+              </Pressable>
+            </Animated.View>
           )}
         </Animated.View>
       )}
@@ -537,6 +680,14 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         data={isLoading ? [] : filteredTodos}
         keyExtractor={(todo) => String(todo.id)}
         onDragEnd={({ data }) => handleReorder(data)}
+        // Default della libreria è 0 (nessuna soglia): il Pan interno della
+        // FlatList (sempre attivo su tutta l'area, per gestire il drag una
+        // volta iniziato con onLongPress) competeva con lo swipe orizzontale
+        // di ogni riga per il riconoscimento del gesto su OGNI tocco,
+        // risolvendosi in modo non deterministico — causa dello swipe che
+        // "a volte non parte" in modo apparentemente casuale. Una piccola
+        // soglia lascia vincere lo swipe orizzontale sui movimenti laterali.
+        activationDistance={12}
         contentContainerStyle={{
           padding: 24,
           paddingTop: stickyHeaderHeight + 16,
@@ -563,7 +714,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             </View>
           )
         }
-        renderItem={({ item: todo, drag, isActive }) => (
+        renderItem={({ item: todo, drag, isActive, getIndex }) => (
           <TodoRow
             todo={todo}
             editMode={editMode}
@@ -571,6 +722,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             selected={selectedIds.includes(todo.id)}
             canDrag={canDrag}
             isActive={isActive}
+            index={getIndex() ?? 0}
             onDrag={drag}
             onToggle={handleToggle}
             onToggleSelect={(todoId) =>
@@ -591,26 +743,61 @@ export default function ListDetailScreen({ route, navigation }: Props) {
 
       {stickyHeader}
 
-      {/* Barra azioni flottante in basso */}
+      {/* Barra azioni flottante in basso: vero vetro puro (mai tintColor sul
+          glass stesso: lo appiattisce, perde la distorsione) con una tinta
+          colorata sopra a opacità moderata, esattamente come AnimatedAlert
+          e i menu di Home — quello è il pattern che dà l'effetto vetro
+          marcato, non il tintColor nativo del GlassView. */}
       <View className="absolute bottom-6 left-6 right-6 flex-row justify-between">
-        <Pressable onPress={() => setEditMode((prev) => !prev)} className="rounded-full shadow-lg">
-          <Animated.View style={[editFabStyle, { borderRadius: 999, padding: 16 }]}>
-            <Pencil size={22} color="#FFFFFF" />
-          </Animated.View>
+        <Pressable
+          onPress={() => {
+            editBubbleRef.current?.trigger();
+            setEditMode((prev) => !prev);
+          }}
+          className="rounded-full shadow-lg"
+        >
+          <View className="overflow-hidden rounded-full">
+            <GlassSurface
+              style={StyleSheet.absoluteFill}
+              colorScheme={isDark ? "dark" : "light"}
+              tint={isDark ? "dark" : "light"}
+              intensity={80}
+            />
+            <View
+              style={{ padding: 16, backgroundColor: editMode ? "#16A34A" : "#374151", opacity: 0.55 }}
+            >
+              <Pencil size={22} color="#FFFFFF" />
+            </View>
+            <BubbleTapEffect ref={editBubbleRef} color="#FFFFFF" />
+          </View>
         </Pressable>
 
         <View className="flex-row gap-3">
-          <Pressable
-            onPress={() => setSearchOpen((prev) => !prev)}
-            className="rounded-full bg-gray-700 p-4 shadow-lg"
-          >
-            <Search size={22} color="#FFFFFF" />
+          <Pressable onPress={() => setSearchOpen((prev) => !prev)} className="rounded-full shadow-lg">
+            <View className="overflow-hidden rounded-full">
+              <GlassSurface
+                style={StyleSheet.absoluteFill}
+                colorScheme={isDark ? "dark" : "light"}
+                tint={isDark ? "dark" : "light"}
+                intensity={80}
+              />
+              <View style={{ padding: 16, backgroundColor: "#374151", opacity: 0.55 }}>
+                <Search size={22} color="#FFFFFF" />
+              </View>
+            </View>
           </Pressable>
-          <Pressable
-            onPress={() => sortMenuRef.current?.present()}
-            className="rounded-full bg-yellow-500 p-4 shadow-lg"
-          >
-            <ListFilter size={22} color="#FFFFFF" />
+          <Pressable onPress={() => sortMenuRef.current?.present()} className="rounded-full shadow-lg">
+            <View className="overflow-hidden rounded-full">
+              <GlassSurface
+                style={StyleSheet.absoluteFill}
+                colorScheme={isDark ? "dark" : "light"}
+                tint={isDark ? "dark" : "light"}
+                intensity={80}
+              />
+              <View style={{ padding: 16, backgroundColor: "#EAB308", opacity: 0.55 }}>
+                <ListFilter size={22} color="#FFFFFF" />
+              </View>
+            </View>
           </Pressable>
         </View>
       </View>
@@ -622,6 +809,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           setShowQuantityModal(false);
           setQuantityValue("");
           setUnitValue("");
+          setDescriptionValue("");
         }}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
@@ -640,6 +828,14 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             onChangeText={setTitle}
             placeholder="Es: Latte, Pane, Uova..."
             className="mb-3 rounded-lg border border-gray-200 px-4 py-2.5 text-gray-900 dark:border-white/20 dark:text-white"
+          />
+          <TextInput
+            value={descriptionValue}
+            onChangeText={setDescriptionValue}
+            placeholder="Descrizione (facoltativa)"
+            multiline
+            className="mb-3 rounded-lg border border-gray-200 px-4 py-2.5 text-gray-900 dark:border-white/20 dark:text-white"
+            style={{ minHeight: 44, textAlignVertical: "top" }}
           />
           <View className="mb-4 flex-row gap-3">
             <TextInput
@@ -662,6 +858,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
                 setShowQuantityModal(false);
                 setQuantityValue("");
                 setUnitValue("");
+                setDescriptionValue("");
               }}
               className="flex-1 rounded-lg bg-gray-100 py-2.5 dark:bg-gray-800"
             >
@@ -696,6 +893,16 @@ export default function ListDetailScreen({ route, navigation }: Props) {
                 value={editedTodo.title}
                 onChangeText={(text) => setEditedTodo({ ...editedTodo, title: text })}
                 className="mb-3 rounded-lg border border-gray-200 px-4 py-2.5 text-gray-900 dark:border-white/20 dark:text-white"
+              />
+              <TextInput
+                value={editedTodo.description ?? ""}
+                onChangeText={(text) =>
+                  setEditedTodo({ ...editedTodo, description: text || null })
+                }
+                placeholder="Descrizione (facoltativa)"
+                multiline
+                className="mb-3 rounded-lg border border-gray-200 px-4 py-2.5 text-gray-900 dark:border-white/20 dark:text-white"
+                style={{ minHeight: 44, textAlignVertical: "top" }}
               />
               <View className="mb-4 flex-row gap-3">
                 <TextInput
@@ -866,6 +1073,16 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         currentListName={listName}
         allLists={allLists}
         onMove={handleMoveTodo}
+      />
+
+      <MoveTodoModal
+        isOpen={showBulkMoveModal}
+        onClose={() => setShowBulkMoveModal(false)}
+        todoTitle={`${selectedIds.length} ToDo selezionate`}
+        currentListId={listId}
+        currentListName={listName}
+        allLists={allLists}
+        onMove={handleBulkMove}
       />
     </View>
   );

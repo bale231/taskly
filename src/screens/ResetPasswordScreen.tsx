@@ -110,7 +110,7 @@ export default function ResetPasswordScreen({ route, navigation }: Props) {
 
         // ✅ Redirect al login dopo 3 secondi
         setTimeout(() => {
-          navigation.replace("Login");
+          navigation.reset({ index: 0, routes: [{ name: "Login" }] });
         }, 3000);
       } else {
         setError(data.message || "Errore durante il reset della password");

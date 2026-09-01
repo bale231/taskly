@@ -9,7 +9,13 @@
  *   "/profile"                       -> Profile
  */
 export type RootStackParamList = {
-  Login: undefined;
+  /**
+   * `verifyEmail` è opzionale: presente solo quando si arriva dal deep link
+   * dell'email di verifica (taskly://verify-email/:uid/:token) — Login lo
+   * usa per chiamare l'API di verifica e mostrare l'esito in una modale,
+   * senza una schermata intermedia dedicata.
+   */
+  Login: { verifyEmail?: { uid: string; token: string } } | undefined;
   Register: undefined;
   ForgotPassword: undefined;
   ResetPassword: { uid: string; token: string };

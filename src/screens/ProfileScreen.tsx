@@ -37,17 +37,15 @@ import {
   updateProfile,
 } from "../api/auth";
 import { requestPasswordReset } from "../api/auth";
-import AnimatedAlert from "../components/AnimatedAlert";
 import BottomNav from "../components/BottomNav";
 import BubbleModal from "../components/BubbleModal";
 import GlassSurface from "../components/GlassSurface";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
+import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
-
-type Alert = { type: "success" | "error" | "warning"; message: string } | null;
 
 interface ProfileUser {
   username: string;
@@ -57,6 +55,27 @@ interface ProfileUser {
 }
 
 const AVATAR_BASE_URL = "https://bale231.pythonanywhere.com";
+
+/**
+ * Il polyfill `fetch`/FormData di Expo SDK 57 ha sostituito quello di React
+ * Native: il vecchio pattern `formData.append("x", { uri, name, type })` non
+ * viene più convertito in un part valido (lancia "Unsupported FormDataPart
+ * implementation", perché il loro convertFormData accetta solo `string` o
+ * `Blob` reali, non l'oggetto proprietario `{uri}` di RN). Bisogna quindi
+ * leggere il file locale e ottenere un vero Blob prima di allegarlo.
+ */
+async function uriToBlob(uri: string, fallbackName: string, fallbackType: string): Promise<Blob> {
+  const res = await fetch(uri);
+  const rawBlob = await res.blob();
+  // `Blob.type` è un getter nativo, non scrivibile: per garantire il MIME
+  // type corretto (spesso assente/generico sui file locali) va ricostruito
+  // un nuovo Blob invece di mutare quello esistente.
+  const blob = rawBlob.type ? rawBlob : new Blob([rawBlob], { type: fallbackType });
+  // @ts-expect-error: `name` non è nell'interfaccia Blob standard, ma il
+  // convertFormData di Expo lo legge per l'header Content-Disposition.
+  blob.name = fallbackName;
+  return blob;
+}
 
 /**
  * Port di src/pages/Profile.tsx della webapp: avatar, modifica
@@ -73,9 +92,9 @@ export default function ProfileScreen({ navigation }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const insets = useSafeAreaInsets();
+  const { showAlert } = useAlert();
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [alert, setAlert] = useState<Alert>(null);
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((event) => {
     scrollY.value = event.contentOffset.y;
@@ -122,9 +141,6 @@ export default function ProfileScreen({ navigation }: Props) {
     ),
   }));
 
-  const showAlert = (message: string, type: "success" | "error" | "warning") =>
-    setAlert({ type, message });
-
   const loadUser = async () => {
     const data = await getCurrentUserJWT();
     if (data) {
@@ -144,7 +160,7 @@ export default function ProfileScreen({ navigation }: Props) {
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      showAlert("Serve il permesso per accedere alle foto", "error");
+      showAlert("error", "Serve il permesso per accedere alle foto");
       return;
     }
 
@@ -162,65 +178,75 @@ export default function ProfileScreen({ navigation }: Props) {
     setAvatarUri(asset.uri);
     setClearPicture(false);
 
-    // Sincronizza subito col backend, come nella webapp (optimistic + background sync).
-    const formData = new FormData();
-    formData.append("username", username);
-    formData.append("email", email);
-    formData.append("profile_picture", {
-      uri: asset.uri,
-      name: asset.fileName ?? "avatar.jpg",
-      type: asset.mimeType ?? "image/jpeg",
-    } as unknown as Blob);
+    try {
+      // Sincronizza subito col backend, come nella webapp (optimistic + background sync).
+      const blob = await uriToBlob(
+        asset.uri,
+        asset.fileName ?? "avatar.jpg",
+        asset.mimeType ?? "image/jpeg"
+      );
+      const formData = new FormData();
+      formData.append("username", username);
+      formData.append("email", email);
+      formData.append("profile_picture", blob, asset.fileName ?? "avatar.jpg");
 
-    updateProfile(formData)
-      .then((res) => {
-        if (res.message === "Profile updated") {
-          showAlert("Immagine aggiornata con successo", "success");
-        } else {
-          showAlert("Errore durante l'upload dell'immagine", "error");
-        }
-      })
-      .catch(() => showAlert("Errore durante l'upload dell'immagine", "error"));
+      const res = await updateProfile(formData);
+      if (res.ok) {
+        showAlert("success", "Immagine aggiornata con successo");
+      } else {
+        console.error("Upload immagine profilo fallito:", res.status, res);
+        showAlert("error", res.error || res.message || "Errore durante l'upload dell'immagine");
+      }
+    } catch (err: any) {
+      console.error("Upload immagine profilo, errore:", err);
+      showAlert("error", `Errore upload: ${err?.message || String(err)}`);
+    }
   };
 
   const handleRemoveImage = () => {
     setAvatarUri(null);
     setAvatarAsset(null);
     setClearPicture(true);
-    showAlert("Immagine rimossa con successo", "success");
+    showAlert("success", "Immagine rimossa con successo");
 
     const formData = new FormData();
     formData.append("username", username);
     formData.append("email", email);
     formData.append("clear_picture", "true");
-    updateProfile(formData).catch(() =>
-      showAlert("Errore durante la rimozione dell'immagine", "error")
-    );
+    updateProfile(formData).catch((err) => {
+      console.error("Rimozione immagine profilo fallita:", err);
+      showAlert("error", "Errore durante la rimozione dell'immagine");
+    });
   };
 
-  const handleSave = () => {
-    showAlert("Profilo aggiornato con successo", "success");
+  const handleSave = async () => {
     setEditMode(false);
 
-    const formData = new FormData();
-    formData.append("username", username);
-    formData.append("email", email);
-    if (avatarAsset) {
-      formData.append("profile_picture", {
-        uri: avatarAsset.uri,
-        name: avatarAsset.fileName ?? "avatar.jpg",
-        type: avatarAsset.mimeType ?? "image/jpeg",
-      } as unknown as Blob);
-    }
-    if (clearPicture) formData.append("clear_picture", "true");
+    try {
+      const formData = new FormData();
+      formData.append("username", username);
+      formData.append("email", email);
+      if (avatarAsset) {
+        const blob = await uriToBlob(
+          avatarAsset.uri,
+          avatarAsset.fileName ?? "avatar.jpg",
+          avatarAsset.mimeType ?? "image/jpeg"
+        );
+        formData.append("profile_picture", blob, avatarAsset.fileName ?? "avatar.jpg");
+      }
+      if (clearPicture) formData.append("clear_picture", "true");
 
-    updateProfile(formData)
-      .then((res) => {
-        if (res.message !== "Profile updated") {
-          showAlert("Errore nell'aggiornamento del profilo", "error");
-        }
-      })
-      .catch(() => showAlert("Errore nell'aggiornamento del profilo", "error"));
+      const res = await updateProfile(formData);
+      if (res.ok) {
+        showAlert("success", "Profilo aggiornato con successo");
+      } else {
+        console.error("Aggiornamento profilo fallito:", res.status, res);
+        showAlert("error", res.error || res.message || "Errore nell'aggiornamento del profilo");
+      }
+    } catch (err: any) {
+      console.error("Aggiornamento profilo, errore:", err);
+      showAlert("error", `Errore: ${err?.message || String(err)}`);
+    }
 
     setAvatarAsset(null);
     setClearPicture(false);
@@ -232,18 +258,18 @@ export default function ProfileScreen({ navigation }: Props) {
     try {
       const res = await updateNotificationPreferences(newValue);
       if (res.error) {
-        showAlert(res.message || "Errore nell'aggiornamento preferenze", "error");
+        showAlert("error", res.message || "Errore nell'aggiornamento preferenze");
       } else {
         setPushEnabled(newValue);
         showAlert(
+          "success",
           newValue
             ? "Preferenza salvata. Nota: le notifiche push native non sono ancora attive in questa app."
-            : "Notifiche push disattivate",
-          "success"
+            : "Notifiche push disattivate"
         );
       }
     } catch {
-      showAlert("Errore durante l'operazione", "error");
+      showAlert("error", "Errore durante l'operazione");
     } finally {
       setTogglingPush(false);
     }
@@ -254,12 +280,12 @@ export default function ProfileScreen({ navigation }: Props) {
     try {
       const { ok, data } = await requestPasswordReset(email);
       if (ok) {
-        showAlert("Email di reset password inviata! Controlla la tua casella di posta.", "success");
+        showAlert("success", "Email di reset password inviata! Controlla la tua casella di posta.");
       } else {
-        showAlert(data.message || "Errore nell'invio dell'email", "error");
+        showAlert("error", data.message || "Errore nell'invio dell'email");
       }
     } catch {
-      showAlert("Errore di connessione", "error");
+      showAlert("error", "Errore di connessione");
     }
   };
 
@@ -267,19 +293,19 @@ export default function ProfileScreen({ navigation }: Props) {
     setShowDeactivateModal(false);
     const res = await deactivateAccount();
     if (res.message === "Account disattivato") {
-      showAlert("Account disattivato correttamente.", "success");
+      showAlert("success", "Account disattivato correttamente.");
       setTimeout(async () => {
         await logout();
-        navigation.replace("Login");
+        navigation.reset({ index: 0, routes: [{ name: "Login" }] });
       }, 2000);
     } else {
-      showAlert("Errore nella disattivazione dell'account", "error");
+      showAlert("error", "Errore nella disattivazione dell'account");
     }
   };
 
   const handleLogout = async () => {
     await logout();
-    navigation.replace("Login");
+    navigation.reset({ index: 0, routes: [{ name: "Login" }] });
   };
 
   if (loading) {
@@ -293,8 +319,6 @@ export default function ProfileScreen({ navigation }: Props) {
   return (
     <View className="flex-1 bg-gray-100 dark:bg-gray-900">
       <Navbar scrollY={scrollY} />
-
-      <AnimatedAlert alert={alert} onClose={() => setAlert(null)} />
 
       <Animated.ScrollView
         onScroll={onScroll}

@@ -30,13 +30,21 @@ export default function AnimatedAlert({ alert, onClose }: AnimatedAlertProps) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const isDark = theme === "dark";
-  const translateY = useRef(new Animated.Value(-100)).current;
+  const translateY = useRef(new Animated.Value(-200)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   const [displayed, setDisplayed] = useState<Alert | null>(alert);
+  // Il vero Liquid Glass (GlassSurface) resta visibile come "vetro vuoto"
+  // finché è montato, anche a translateY/opacity 0 sul contenuto: durante
+  // l'uscita va nascosto esplicitamente tramite la sua prop `visible`,
+  // altrimenti un residuo di vetro senza contenuto resta incollato sotto la
+  // dynamic island per la durata dell'animazione (e -100px non è comunque
+  // sufficiente a portarlo del tutto fuori schermo su tutti i device).
+  const [glassVisible, setGlassVisible] = useState(false);
 
   const animateOut = (onDone?: () => void) => {
+    setGlassVisible(false);
     Animated.parallel([
-      Animated.timing(translateY, { toValue: -100, duration: 250, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: -200, duration: 250, useNativeDriver: true }),
       Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }),
     ]).start(({ finished }) => {
       if (finished) onDone?.();
@@ -44,8 +52,9 @@ export default function AnimatedAlert({ alert, onClose }: AnimatedAlertProps) {
   };
 
   const animateIn = () => {
-    translateY.setValue(-100);
+    translateY.setValue(-200);
     opacity.setValue(0);
+    setGlassVisible(true);
     Animated.spring(translateY, {
       toValue: 0,
       friction: 7,
@@ -109,6 +118,7 @@ export default function AnimatedAlert({ alert, onClose }: AnimatedAlertProps) {
             tinta arriva dalla View colorata sotto, il vetro resta puro. */}
         <GlassSurface
           style={StyleSheet.absoluteFill}
+          visible={glassVisible}
           colorScheme={isDark ? "dark" : "light"}
           tint={isDark ? "dark" : "light"}
           intensity={80}
