@@ -1,7 +1,7 @@
 import { BlurView, type BlurTint } from "expo-blur";
 import { GlassView, isLiquidGlassAvailable, type GlassStyle } from "expo-glass-effect";
 import { useEffect } from "react";
-import type { ViewProps } from "react-native";
+import { Platform, type ViewProps } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 
 type GlassSurfaceProps = ViewProps & {
@@ -58,8 +58,38 @@ export default function GlassSurface({
     );
   }
 
+  // Su Android il blur software di expo-blur rende in modo incoerente
+  // (spesso quasi trasparente): niente vetro/blur lì, solo una superficie
+  // piena tema-aware. iOS <26 e web restano sul BlurView come prima.
+  if (Platform.OS === "android") {
+    return <SolidSurface visible={visible} colorScheme={colorScheme} style={style} {...rest} />;
+  }
+
   return (
     <FadingBlur visible={visible} intensity={intensity} tint={tint} style={style} {...rest} />
+  );
+}
+
+function SolidSurface({
+  visible,
+  colorScheme,
+  style,
+  ...rest
+}: Pick<GlassSurfaceProps, "visible" | "colorScheme" | "style"> & ViewProps) {
+  const opacity = useSharedValue(visible ? 1 : 0);
+
+  useEffect(() => {
+    opacity.value = withTiming(visible ? 1 : 0, { duration: 250 });
+  }, [visible, opacity]);
+
+  const fadeStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const isDark = colorScheme === "dark";
+
+  return (
+    <Animated.View
+      style={[style, fadeStyle, { backgroundColor: isDark ? "#111827" : "#FFFFFF" }]}
+      {...rest}
+    />
   );
 }
 

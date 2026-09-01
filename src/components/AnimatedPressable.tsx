@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { Pressable, StyleSheet, type PressableProps, type ViewStyle } from "react-native";
+import { Platform, Pressable, StyleSheet, type PressableProps, type ViewStyle } from "react-native";
 import Animated, {
   interpolateColor,
   useAnimatedStyle,
@@ -98,6 +98,11 @@ export default function AnimatedPressable({
         scale.value = withSpring(1, { damping: 12, stiffness: 300 });
         onPressOut?.(e);
       }}
+      android_ripple={
+        Platform.OS === "android"
+          ? { color: activeBackgroundColor ?? "rgba(0,0,0,0.1)", borderless: false }
+          : undefined
+      }
       {...props}
     >
       {icon ? (

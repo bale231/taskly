@@ -1,7 +1,7 @@
 import type { BottomSheetBackdropProps, BottomSheetBackgroundProps } from "@gorhom/bottom-sheet";
 import { BlurView } from "expo-blur";
 import { useMemo, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Extrapolation,
@@ -53,13 +53,25 @@ export function GlassBottomSheetBackground({
         },
       ]}
     >
-      <GlassSurface
-        style={StyleSheet.absoluteFill}
-        visible={visible}
-        colorScheme={isDark ? "dark" : "light"}
-        tint={isDark ? "dark" : "light"}
-        intensity={90}
-      />
+      {Platform.OS === "android" ? (
+        // Superficie Material piena invece del blur (il fallback BlurView
+        // di GlassSurface su Android rende in modo incoerente): stesso
+        // trattamento dello scrim in GlassBottomSheetBackdrop qui sopra.
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: isDark ? "#111827" : "#FFFFFF" },
+          ]}
+        />
+      ) : (
+        <GlassSurface
+          style={StyleSheet.absoluteFill}
+          visible={visible}
+          colorScheme={isDark ? "dark" : "light"}
+          tint={isDark ? "dark" : "light"}
+          intensity={90}
+        />
+      )}
     </View>
   );
 }
@@ -102,11 +114,23 @@ export function GlassBottomSheetBackdrop({
   // React intermedio che possa disallinearsi dal ciclo di vita reale della sheet.
   const tapGesture = useMemo(() => Gesture.Tap().onEnd(() => runOnJS(onClose)()), [onClose]);
 
+  // Su Android niente BlurView: il blur software di expo-blur lì rende in
+  // modo incoerente (spesso quasi invisibile), lasciando solo l'overlay
+  // scuro sotto — risultato che sembrava "opacità senza blur". Meglio uno
+  // scrim Material pieno e deciso invece di inseguire un'imitazione del
+  // Liquid Glass di iOS, che su Android non esiste.
   return (
     <GestureDetector gesture={tapGesture}>
       <Animated.View style={[style, fadeStyle]} pointerEvents={pointerEvents}>
-        <BlurView style={StyleSheet.absoluteFill} intensity={40} tint={isDark ? "dark" : "light"} />
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.25)" }]} />
+        {Platform.OS === "ios" && (
+          <BlurView style={StyleSheet.absoluteFill} intensity={40} tint={isDark ? "dark" : "light"} />
+        )}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            { backgroundColor: Platform.OS === "android" ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.25)" },
+          ]}
+        />
       </Animated.View>
     </GestureDetector>
   );
