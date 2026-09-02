@@ -475,7 +475,7 @@ export default function LoginScreen({ navigation, route }: Props) {
         onRequestClose={() => setVerifyStatus("idle")}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full items-center overflow-hidden rounded-3xl border border-gray-200/50 p-6">
+        <View className="w-full items-center overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme="light"

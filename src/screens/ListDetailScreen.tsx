@@ -813,7 +813,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         }}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -877,7 +877,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         onRequestClose={() => setEditedTodo(null)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -948,7 +948,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         onRequestClose={() => setRowConfirm(null)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -985,7 +985,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         onRequestClose={() => setShowBulkConfirm(false)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -1049,7 +1049,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             <Pressable
               key={value}
               onPress={() => handleSortSelect(value)}
-              className={`mb-2 rounded-2xl px-6 py-5 ${
+              className={`mb-2 rounded-2xl android:rounded-xl px-6 py-5 ${
                 sortOption === value ? "bg-blue-600" : "bg-gray-100 dark:bg-gray-800"
               }`}
             >

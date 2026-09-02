@@ -510,7 +510,7 @@ export default function ProfileScreen({ navigation }: Props) {
         onRequestClose={() => setShowResetModal(false)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -551,7 +551,7 @@ export default function ProfileScreen({ navigation }: Props) {
         onRequestClose={() => setShowDeactivateModal(false)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}

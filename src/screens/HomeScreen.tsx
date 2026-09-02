@@ -563,7 +563,7 @@ export default function HomeScreen({ navigation }: Props) {
           <Pressable
             onPress={() => navigation.navigate("FindUsers")}
             accessibilityLabel="Trova Utenti"
-            className="flex-1 h-14 items-center justify-center rounded-2xl bg-blue-500"
+            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-blue-500"
           >
             <Users size={22} color="#FFFFFF" />
           </Pressable>
@@ -571,7 +571,7 @@ export default function HomeScreen({ navigation }: Props) {
           <Pressable
             onPress={() => navigation.navigate("FriendRequests")}
             accessibilityLabel="Richieste di Amicizia"
-            className="flex-1 h-14 items-center justify-center rounded-2xl bg-green-500"
+            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-green-500"
           >
             <UserPlus size={22} color="#FFFFFF" />
           </Pressable>
@@ -579,7 +579,7 @@ export default function HomeScreen({ navigation }: Props) {
           <Pressable
             onPress={() => navigation.navigate("Friends")}
             accessibilityLabel="I Miei Amici"
-            className="flex-1 h-14 items-center justify-center rounded-2xl bg-purple-500"
+            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-purple-500"
           >
             <UserCheck size={22} color="#FFFFFF" />
           </Pressable>
@@ -594,7 +594,7 @@ export default function HomeScreen({ navigation }: Props) {
               setCatName("");
             }}
             accessibilityLabel="Nuova Categoria"
-            className="flex-1 h-14 items-center justify-center rounded-2xl bg-yellow-500"
+            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-yellow-500"
           >
             <Plus size={22} color="#FFFFFF" />
           </Pressable>
@@ -603,7 +603,7 @@ export default function HomeScreen({ navigation }: Props) {
             active={showArchived}
             onPress={() => setShowArchived((prev) => !prev)}
             accessibilityLabel={showArchived ? "Mostra attive" : "Mostra archivio"}
-            className={`flex-1 h-14 items-center justify-center rounded-2xl ${
+            className={`flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl ${
               showArchived ? "bg-orange-500" : "bg-gray-500"
             }`}
           >
@@ -623,7 +623,7 @@ export default function HomeScreen({ navigation }: Props) {
             <Pressable
               onPress={() => setSearchOpen(true)}
               accessibilityLabel="Cerca"
-              className="flex-1 h-14 items-center justify-center rounded-2xl bg-gray-600"
+              className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-gray-600"
             >
               <Search size={22} color="#FFFFFF" />
             </Pressable>
@@ -857,7 +857,7 @@ export default function HomeScreen({ navigation }: Props) {
         }}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -955,7 +955,7 @@ export default function HomeScreen({ navigation }: Props) {
         }}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}
@@ -1014,7 +1014,7 @@ export default function HomeScreen({ navigation }: Props) {
 
           <Pressable
             onPress={() => handleSelectCategory(null)}
-            className={`mb-3 rounded-2xl px-6 py-5 ${
+            className={`mb-3 rounded-2xl android:rounded-xl px-6 py-5 ${
               selectedCategory === null ? "bg-blue-600" : "bg-gray-100 dark:bg-gray-800"
             }`}
           >
@@ -1032,7 +1032,7 @@ export default function HomeScreen({ navigation }: Props) {
               <Pressable
                 key={cat.id}
                 onPress={() => handleSelectCategory(cat)}
-                className={`mb-3 rounded-2xl px-6 py-5 ${
+                className={`mb-3 rounded-2xl android:rounded-xl px-6 py-5 ${
                   selected ? "bg-blue-600" : "bg-gray-100 dark:bg-gray-800"
                 }`}
               >
@@ -1055,7 +1055,7 @@ export default function HomeScreen({ navigation }: Props) {
         onRequestClose={() => setShowDeleteConfirmId(null)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}

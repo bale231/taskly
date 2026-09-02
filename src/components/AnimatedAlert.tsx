@@ -111,7 +111,7 @@ export default function AnimatedAlert({ alert, onClose }: AnimatedAlertProps) {
           mentre il vetro resta sempre attivo. */}
       <Animated.View
         style={{ transform: [{ translateY }], maxWidth: "88%" }}
-        className="overflow-hidden rounded-2xl border border-white/20 shadow-2xl"
+        className="overflow-hidden rounded-2xl android:rounded-xl border border-white/20 shadow-2xl"
       >
         {/* Niente `tintColor` qui: sul vero Liquid Glass lo rende quasi
             opaco, coprendo il blur invece di limitarsi a colorarlo. La

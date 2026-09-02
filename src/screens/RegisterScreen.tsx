@@ -217,7 +217,7 @@ export default function RegisterScreen({ navigation }: Props) {
         onRequestClose={() => setShowModal(false)}
         contentStyle={{ width: "100%", maxWidth: 320 }}
       >
-        <View className="w-full items-center overflow-hidden rounded-3xl border border-gray-200/50 p-6 dark:border-white/20">
+        <View className="w-full items-center overflow-hidden rounded-3xl android:rounded-xl border border-gray-200/50 p-6 dark:border-white/20">
           <GlassSurface
             style={StyleSheet.absoluteFill}
             colorScheme={isDark ? "dark" : "light"}

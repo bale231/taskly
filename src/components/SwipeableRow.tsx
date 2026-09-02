@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   runOnJS,
@@ -8,18 +8,25 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 
+const IS_ANDROID = Platform.OS === "android";
+
 /**
  * Unifica SwipeableListItem e SwipeableTodoItem della webapp (erano quasi
  * identici, differivano solo nelle azioni disponibili). Là lo swipe era
  * gestito a mano con onMouseDown/onTouchMove + gsap.quickTo, e scattava
- * subito al rilascio oltre soglia; qui invece segue il comportamento nativo
- * iOS (Mail, Promemoria): lo swipe apre e la riga resta ferma alla
- * larghezza dell'azione finché non tocchi il bottone (la esegue) o
- * altrove (richiude senza fare nulla).
+ * subito al rilascio oltre soglia.
+ *
+ * Su iOS segue il comportamento nativo (Mail, Promemoria): lo swipe apre e
+ * la riga resta ferma alla larghezza dell'azione finché non tocchi il
+ * bottone (la esegue) o altrove (richiude senza fare nulla).
+ *
+ * Su Android segue invece il pattern Material (Gmail): superata la soglia,
+ * l'azione parte subito al rilascio del dito, senza ancoraggio — la riga
+ * torna a translateX 0 mentre l'azione si esegue.
  */
-const ACTION_WIDTH = 76; // larghezza a cui la riga resta ancorata quando aperta
-const MAX_TRANSLATE = ACTION_WIDTH * 1.3; // overscroll elastico oltre l'ancoraggio
-const OPEN_THRESHOLD = ACTION_WIDTH / 2; // superata questa soglia, si ancora aperta al rilascio
+const ACTION_WIDTH = 76; // larghezza a cui la riga resta ancorata quando aperta (iOS)
+const MAX_TRANSLATE = ACTION_WIDTH * 1.3; // overscroll elastico oltre l'ancoraggio/soglia
+const OPEN_THRESHOLD = ACTION_WIDTH / 2; // superata questa soglia, si ancora aperta (iOS) o scatta l'azione (Android)
 
 interface SwipeAction {
   icon: ReactNode;
@@ -112,11 +119,23 @@ export default function SwipeableRow({
     .onEnd(() => {
       const value = translateX.value;
       if (value > OPEN_THRESHOLD && hasLeftTrigger) {
-        translateX.value = withSpring(ACTION_WIDTH, { damping: 22, stiffness: 260 });
-        runOnJS(setOpenSide)("left");
+        if (IS_ANDROID) {
+          // Material (Gmail): l'azione scatta subito al rilascio, niente
+          // ancoraggio — la riga torna a 0 mentre `runTrigger` la esegue.
+          translateX.value = withSpring(0, { damping: 20, stiffness: 220, overshootClamping: true });
+          runOnJS(runTrigger)("left");
+        } else {
+          translateX.value = withSpring(ACTION_WIDTH, { damping: 22, stiffness: 260 });
+          runOnJS(setOpenSide)("left");
+        }
       } else if (value < -OPEN_THRESHOLD && hasRightTrigger) {
-        translateX.value = withSpring(-ACTION_WIDTH, { damping: 22, stiffness: 260 });
-        runOnJS(setOpenSide)("right");
+        if (IS_ANDROID) {
+          translateX.value = withSpring(0, { damping: 20, stiffness: 220, overshootClamping: true });
+          runOnJS(runTrigger)("right");
+        } else {
+          translateX.value = withSpring(-ACTION_WIDTH, { damping: 22, stiffness: 260 });
+          runOnJS(setOpenSide)("right");
+        }
       } else {
         translateX.value = withSpring(0, { damping: 20, stiffness: 220, overshootClamping: true });
         runOnJS(setOpenSide)("closed");

@@ -187,14 +187,14 @@ export default function Navbar({ scrollY }: NavbarProps) {
               menuRef.current?.dismiss();
               navigation.navigate("Profile");
             }}
-            className="mb-2 flex-row items-center gap-3 rounded-2xl bg-gray-100 px-6 py-5 dark:bg-gray-800"
+            className="mb-2 flex-row items-center gap-3 rounded-2xl android:rounded-xl bg-gray-100 px-6 py-5 dark:bg-gray-800"
           >
             <UserIcon size={20} color={isDark ? "#E5E7EB" : "#374151"} />
             <Text className="text-lg font-medium text-gray-800 dark:text-gray-200">Profilo</Text>
           </Pressable>
           <Pressable
             onPress={handleLogout}
-            className="flex-row items-center gap-3 rounded-2xl bg-red-50 px-6 py-5 dark:bg-red-900/30"
+            className="flex-row items-center gap-3 rounded-2xl android:rounded-xl bg-red-50 px-6 py-5 dark:bg-red-900/30"
           >
             <LogOut size={20} color="#DC2626" />
             <Text className="text-lg font-medium text-red-600 dark:text-red-400">Esci</Text>

@@ -95,7 +95,7 @@ export default function BottomNav({
                 navigation.navigate("Home");
               }
             }}
-            className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
+            className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
             activeBackgroundColor={isDark ? "rgba(30,58,138,0.5)" : "#DBEAFE"}
             pillStyle={{ borderRadius: 16, padding: 8 }}
             icon={
@@ -118,7 +118,7 @@ export default function BottomNav({
           <AnimatedPressable
             active={isProfile}
             onPress={() => navigation.navigate("Profile")}
-            className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
+            className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
             activeBackgroundColor={isDark ? "rgba(88,28,135,0.5)" : "#F3E8FF"}
             pillStyle={{ borderRadius: 16, padding: 8 }}
             icon={
@@ -152,7 +152,7 @@ export default function BottomNav({
             active={editMode}
             glass
             onPress={onToggleEdit}
-            className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
+            className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
             accessibilityLabel={editTitle}
             activeBackgroundColor="#16A34A"
             pillStyle={{ borderRadius: 16, padding: 8 }}
@@ -175,7 +175,7 @@ export default function BottomNav({
         {showSort && onCycleSortOption && (
           <AnimatedPressable
             onPress={onCycleSortOption}
-            className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
+            className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
             accessibilityLabel={`Ordina: ${SORT_LABELS[sortOption] ?? sortOption}`}
             pillStyle={{ borderRadius: 16, padding: 8 }}
             icon={<ListFilter size={28} color="#6B7280" />}
@@ -189,7 +189,7 @@ export default function BottomNav({
         {showSearch && onSearch && (
           <AnimatedPressable
             onPress={onSearch}
-            className="min-w-[64px] items-center gap-0.5 rounded-2xl py-1.5"
+            className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
             pillStyle={{ borderRadius: 16, padding: 8 }}
             icon={<Search size={28} color="#6B7280" />}
           >
