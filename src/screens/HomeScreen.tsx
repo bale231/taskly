@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Image,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -57,6 +58,7 @@ import BottomNav from "../components/BottomNav";
 import BubbleModal from "../components/BubbleModal";
 import GlassSurface from "../components/GlassSurface";
 import { GlassBottomSheetBackdrop, GlassBottomSheetBackground } from "../components/GlassBottomSheet";
+import HighlightText from "../components/HighlightText";
 import ListCardSkeleton from "../components/ListCardSkeleton";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
 import ShareListModal from "../components/ShareListModal";
@@ -128,6 +130,19 @@ export default function HomeScreen({ navigation }: Props) {
       return () => clearTimeout(timer);
     }
   }, [searchOpen]);
+
+  // Col back gesture/hardware, se la ricerca è aperta va chiusa prima
+  // (tastiera compresa) invece di uscire subito dalla schermata.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      if (!searchOpen) return;
+      e.preventDefault();
+      Keyboard.dismiss();
+      setSearchOpen(false);
+      setSearchQuery("");
+    });
+    return unsubscribe;
+  }, [navigation, searchOpen]);
 
   const [isLoadingLists, setIsLoadingLists] = useState(true);
   // Quante ListCardSkeleton mostrare mentre isLoadingLists è true: il numero
@@ -712,6 +727,17 @@ export default function HomeScreen({ navigation }: Props) {
                   const completed = list.todos.filter((t) => t.completed).length;
                   const pending = list.todos.length - completed;
 
+                  // Se la ricerca ha portato questa lista in vista per un
+                  // match su un suo todo (non sul nome lista), mostra quel
+                  // todo evidenziato al posto del contatore: è quello che
+                  // l'utente stava cercando, non quante ToDo restano.
+                  const trimmedQuery = searchQuery.trim().toLowerCase();
+                  const matchedTodo = trimmedQuery
+                    ? list.todos.find((t) =>
+                        (t.text || t.title || "").toLowerCase().includes(trimmedQuery)
+                      )
+                    : undefined;
+
                   return (
                     // WiggleView fuori da SwipeableRow, non dentro: quella
                     // ha overflow-hidden per contenere lo swipe orizzontale,
@@ -743,6 +769,7 @@ export default function HomeScreen({ navigation }: Props) {
                             navigation.navigate("ListDetail", {
                               listId: list.id,
                               todosCount: list.todos.length,
+                              initialSearch: matchedTodo ? searchQuery.trim() : undefined,
                             })
                           }
                           className={`min-h-[110px] flex-row items-center rounded-xl border border-gray-200/50 p-4 dark:border-white/20 ${CARD_BG[list.color] ?? CARD_BG.blue}`}
@@ -773,11 +800,20 @@ export default function HomeScreen({ navigation }: Props) {
                             <Text className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
                               {list.name}
                             </Text>
-                            <Text className="text-sm text-gray-600 dark:text-gray-300">
-                              {list.todos.length === 0
-                                ? "Nessuna ToDo"
-                                : `${pending} ToDo da completare, ${completed} completate.`}
-                            </Text>
+                            {matchedTodo ? (
+                              <HighlightText
+                                text={matchedTodo.text || matchedTodo.title || ""}
+                                highlight={searchQuery}
+                                numberOfLines={1}
+                                className="text-sm text-gray-600 dark:text-gray-300"
+                              />
+                            ) : (
+                              <Text className="text-sm text-gray-600 dark:text-gray-300">
+                                {list.todos.length === 0
+                                  ? "Nessuna ToDo"
+                                  : `${pending} ToDo da completare, ${completed} completate.`}
+                              </Text>
+                            )}
 
                             {editMode && list.is_owner !== false && (
                               <Animated.View

@@ -25,7 +25,7 @@ export type RootStackParamList = {
    * dalla lista appena caricata) per dimensionare correttamente lo skeleton
    * di caricamento; senza (es. deep link diretto) si usa un default.
    */
-  ListDetail: { listId: number; todosCount?: number };
+  ListDetail: { listId: number; todosCount?: number; initialSearch?: string };
   Profile: undefined;
   FindUsers: undefined;
   FriendRequests: undefined;

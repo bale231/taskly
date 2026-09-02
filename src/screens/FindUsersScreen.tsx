@@ -1,6 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { Search, UserPlus } from "lucide-react-native";
-import { useState } from "react";
+import { Search, UserPlus, X } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -13,8 +13,14 @@ import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { searchUsers, sendFriendRequest, type FriendUser } from "../api/friends";
 import AnimatedAlert from "../components/AnimatedAlert";
+import HighlightText from "../components/HighlightText";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
 import type { RootStackParamList } from "../navigation/types";
+
+/** Attesa dopo l'ultimo carattere digitato prima di lanciare la ricerca:
+ * abbastanza breve da sembrare "live", ma evita una richiesta per ogni
+ * singolo tasto mentre l'utente sta ancora scrivendo. */
+const SEARCH_DEBOUNCE_MS = 250;
 
 type Props = NativeStackScreenProps<RootStackParamList, "FindUsers">;
 
@@ -36,19 +42,42 @@ export default function FindUsersScreen({ navigation }: Props) {
   const [sentIds, setSentIds] = useState<number[]>([]);
   const [alert, setAlert] = useState<Alert>(null);
 
-  const handleSearch = async () => {
-    if (!query.trim()) return;
-    setLoading(true);
-    try {
-      const data = await searchUsers(query.trim());
-      setResults(data);
-    } catch (err) {
-      console.error("Errore ricerca utenti:", err);
-      setAlert({ type: "error", message: "Errore durante la ricerca" });
-    } finally {
+  // Tiene traccia della query più recente per cui è partita una richiesta:
+  // se una ricerca precedente (più lenta a rispondere, es. per una query
+  // più corta con più risultati) torna dopo una più recente, il suo
+  // risultato va scartato invece di sovrascrivere quello giusto.
+  const latestQueryRef = useRef("");
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      // Cancellando l'ultima lettera si torna subito allo stato vuoto,
+      // senza aspettare il debounce: è quello il "rimuovimi le persone
+      // man mano che cancello" richiesto.
+      latestQueryRef.current = "";
+      setResults([]);
       setLoading(false);
+      return;
     }
-  };
+
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      latestQueryRef.current = trimmed;
+      try {
+        const data = await searchUsers(trimmed);
+        if (latestQueryRef.current === trimmed) setResults(data);
+      } catch (err) {
+        console.error("Errore ricerca utenti:", err);
+        if (latestQueryRef.current === trimmed) {
+          setAlert({ type: "error", message: "Errore durante la ricerca" });
+        }
+      } finally {
+        if (latestQueryRef.current === trimmed) setLoading(false);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const handleSendRequest = async (user: FriendUser) => {
     try {
@@ -80,25 +109,22 @@ export default function FindUsersScreen({ navigation }: Props) {
           Trova Utenti
         </Text>
 
-        <View className="mb-4 flex-row items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
+        <View className="mb-6 flex-row items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
           <Search size={18} color="#6B7280" />
           <TextInput
             value={query}
             onChangeText={setQuery}
-            onSubmitEditing={handleSearch}
             placeholder="Cerca per username o email..."
             autoCapitalize="none"
             returnKeyType="search"
             className="flex-1 py-3 text-gray-900 dark:text-white"
           />
+          {query.length > 0 && (
+            <Pressable onPress={() => setQuery("")} hitSlop={8}>
+              <X size={18} color="#6B7280" />
+            </Pressable>
+          )}
         </View>
-
-        <Pressable
-          onPress={handleSearch}
-          className="mb-6 flex-row items-center justify-center gap-2 rounded-xl bg-blue-600 py-3"
-        >
-          <Text className="text-sm font-medium text-white">Cerca</Text>
-        </Pressable>
 
         {loading ? (
           <ActivityIndicator size="large" color="#3B82F6" />
@@ -132,12 +158,16 @@ export default function FindUsersScreen({ navigation }: Props) {
                     )}
                   </View>
                   <View className="flex-1">
-                    <Text className="font-semibold text-gray-900 dark:text-white">
-                      {user.full_name || user.username}
-                    </Text>
-                    <Text className="text-xs text-gray-500 dark:text-gray-400">
-                      @{user.username}
-                    </Text>
+                    <HighlightText
+                      text={user.full_name || user.username}
+                      highlight={query}
+                      className="font-semibold text-gray-900 dark:text-white"
+                    />
+                    <HighlightText
+                      text={`@${user.username}`}
+                      highlight={query}
+                      className="text-xs text-gray-500 dark:text-gray-400"
+                    />
                   </View>
                   {!alreadySent && (
                     <Pressable

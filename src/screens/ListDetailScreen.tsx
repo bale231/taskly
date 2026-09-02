@@ -12,10 +12,12 @@ import {
   Square,
   Trash,
   Users,
+  X,
 } from "lucide-react-native";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -230,7 +232,7 @@ function sortTodos(todos: Todo[], sortBy: TodoSortOption): Todo[] {
 }
 
 export default function ListDetailScreen({ route, navigation }: Props) {
-  const { listId, todosCount } = route.params;
+  const { listId, todosCount, initialSearch } = route.params;
   // `todosCount` distingue "assente" (deep link diretto, senza passare dalla
   // Home: qui si indovina un default) da "0" (lista vuota, nessuno skeleton
   // da mostrare) — `todosCount ?? 5` invece di un check `&&` che tratterebbe
@@ -265,8 +267,8 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     onConfirm: () => void;
   } | null>(null);
 
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(!!initialSearch);
+  const [searchQuery, setSearchQuery] = useState(initialSearch ?? "");
   const searchInputRef = useRef<TextInput>(null);
 
   // `autoFocus` non è affidabile quando il campo compare dentro una View
@@ -278,6 +280,20 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       return () => clearTimeout(timer);
     }
   }, [searchOpen]);
+
+  // Col back gesture/hardware, se la ricerca è aperta va chiusa prima
+  // (tastiera compresa) invece di uscire subito dalla schermata: un secondo
+  // back, a ricerca già chiusa, torna alla Home come di consueto.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      if (!searchOpen) return;
+      e.preventDefault();
+      Keyboard.dismiss();
+      setSearchOpen(false);
+      setSearchQuery("");
+    });
+    return unsubscribe;
+  }, [navigation, searchOpen]);
 
   // Modale nuova/edit todo
   const [showQuantityModal, setShowQuantityModal] = useState(false);
@@ -566,6 +582,16 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             placeholder="Cerca todo..."
             className="flex-1 py-3 text-gray-900 dark:text-white"
           />
+          <Pressable
+            onPress={() => {
+              Keyboard.dismiss();
+              setSearchOpen(false);
+              setSearchQuery("");
+            }}
+            hitSlop={8}
+          >
+            <X size={18} color="#6B7280" />
+          </Pressable>
         </Animated.View>
       )}
 
