@@ -28,15 +28,11 @@ import DraggableFlatList from "react-native-draggable-flatlist";
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  createTodo,
-  deleteTodo,
   fetchAllLists,
   fetchListDetails,
   moveTodo,
   reorderTodos,
-  toggleTodo,
   updateSortOrder,
-  updateTodo,
   type ListDetailsResponse,
 } from "../api/todos";
 import { getListShares } from "../api/sharing";
@@ -53,7 +49,16 @@ import TodoRowSkeleton from "../components/TodoRowSkeleton";
 import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
-import { getListTodosCache, setListTodosCache } from "../services/storage";
+import {
+  enqueueCreateTodo,
+  enqueueDeleteTodo,
+  enqueueToggleTodo,
+  enqueueUpdateTodo,
+  nextTempId,
+  onTempIdResolved,
+  processQueue,
+} from "../services/syncQueue";
+import { getListTodosCache, setListTodosCache, updateListTodosCacheTodos } from "../services/storage";
 import type { Todo, TodoSortOption } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ListDetail">;
@@ -391,17 +396,38 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     loadAllLists();
   }, [fetchTodos, loadAllLists, listId]);
 
+  // Un todo creato offline vive con un ID temporaneo (negativo) finché la
+  // sua `create` in coda non viene confermata dal server: quando succede,
+  // syncQueue notifica qui il nuovo ID reale, altrimenti la UI (e ogni
+  // azione successiva su quel todo) resterebbe agganciata per sempre a un
+  // ID che il backend non conosce.
+  useEffect(() => {
+    return onTempIdResolved((tempId, realId) => {
+      setTodos((prev) => {
+        const updated = prev.map((t) => (t.id === tempId ? { ...t, id: realId } : t));
+        updateListTodosCacheTodos(listId, updated);
+        return updated;
+      });
+    });
+  }, [listId]);
+
   const handleToggle = (todoId: number) => {
     setTodos((prev) => {
       const updated = prev.map((t) => (t.id === todoId ? { ...t, completed: !t.completed } : t));
-      return sortOption === "completed" ? sortTodos(updated, "completed") : updated;
+      const sorted = sortOption === "completed" ? sortTodos(updated, "completed") : updated;
+      updateListTodosCacheTodos(listId, sorted);
+      return sorted;
     });
-    toggleTodo(todoId);
+    enqueueToggleTodo(todoId).then(processQueue);
   };
 
   const handleDelete = (todoId: number) => {
-    setTodos((prev) => prev.filter((t) => t.id !== todoId));
-    deleteTodo(todoId);
+    setTodos((prev) => {
+      const updated = prev.filter((t) => t.id !== todoId);
+      updateListTodosCacheTodos(listId, updated);
+      return updated;
+    });
+    enqueueDeleteTodo(todoId).then(processQueue);
   };
 
   const handleCreateTodo = async () => {
@@ -424,22 +450,26 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       return;
     }
 
-    try {
-      const created = await createTodo(listId, title, qty, unit, descriptionValue.trim() || null);
-      if (created?.id) {
-        setTodos((prev) => {
-          const shifted = prev.map((t) => ({ ...t, _originalIndex: (t._originalIndex ?? 0) + 1 }));
-          return [{ ...created, _originalIndex: -1 } as Todo, ...shifted];
-        });
-      } else {
-        showAlert("error", "Impossibile creare la task. Riprova.");
-        return;
-      }
-    } catch (err) {
-      console.error("Errore nella creazione della task:", err);
-      showAlert("error", "Errore di connessione. Riprova più tardi.");
-      return;
-    }
+    const description = descriptionValue.trim() || null;
+    const tempId = await nextTempId();
+    const optimisticTodo: Todo = {
+      id: tempId,
+      title,
+      completed: false,
+      quantity: qty,
+      unit,
+      description,
+      _originalIndex: -1,
+    };
+
+    setTodos((prev) => {
+      const shifted = prev.map((t) => ({ ...t, _originalIndex: (t._originalIndex ?? 0) + 1 }));
+      const updated = [optimisticTodo, ...shifted];
+      updateListTodosCacheTodos(listId, updated);
+      return updated;
+    });
+
+    enqueueCreateTodo({ tempId, listId, title, quantity: qty, unit, description }).then(processQueue);
 
     setTitle("");
     setQuantityValue("");
@@ -462,15 +492,17 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             }
           : t
       );
-      return sortOption === "alphabetical" ? sortTodos(updated, "alphabetical") : updated;
+      const sorted = sortOption === "alphabetical" ? sortTodos(updated, "alphabetical") : updated;
+      updateListTodosCacheTodos(listId, sorted);
+      return sorted;
     });
-    updateTodo(
-      editedTodo.id,
-      editedTodo.title,
-      editedTodo.quantity,
-      editedTodo.unit,
-      editedTodo.description
-    );
+    enqueueUpdateTodo({
+      todoId: editedTodo.id,
+      title: editedTodo.title,
+      quantity: editedTodo.quantity,
+      unit: editedTodo.unit,
+      description: editedTodo.description,
+    }).then(processQueue);
     setEditedTodo(null);
   };
 
@@ -497,13 +529,18 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   );
 
   const handleBulkToggleComplete = () => {
-    setTodos((prev) =>
-      prev.map((t) => (selectedIds.includes(t.id) ? { ...t, completed: bulkToggleTarget } : t))
-    );
-    selectedIds.forEach((id) => {
+    const idsToToggle = selectedIds.filter((id) => {
       const current = todos.find((t) => t.id === id);
-      if (current && current.completed !== bulkToggleTarget) toggleTodo(id);
+      return current && current.completed !== bulkToggleTarget;
     });
+    setTodos((prev) => {
+      const updated = prev.map((t) =>
+        selectedIds.includes(t.id) ? { ...t, completed: bulkToggleTarget } : t
+      );
+      updateListTodosCacheTodos(listId, updated);
+      return updated;
+    });
+    Promise.all(idsToToggle.map((id) => enqueueToggleTodo(id))).then(processQueue);
     setSelectedIds([]);
   };
 
@@ -1044,8 +1081,12 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             </Pressable>
             <Pressable
               onPress={() => {
-                setTodos((prev) => prev.filter((t) => !selectedIds.includes(t.id)));
-                selectedIds.forEach((id) => deleteTodo(id));
+                setTodos((prev) => {
+                  const updated = prev.filter((t) => !selectedIds.includes(t.id));
+                  updateListTodosCacheTodos(listId, updated);
+                  return updated;
+                });
+                Promise.all(selectedIds.map((id) => enqueueDeleteTodo(id))).then(processQueue);
                 setSelectedIds([]);
                 setShowBulkConfirm(false);
               }}

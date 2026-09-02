@@ -166,3 +166,27 @@ export async function getListTodosCache<T>(listId: number | string): Promise<T |
 export async function setListTodosCache(listId: number | string, data: unknown): Promise<void> {
   await AsyncStorage.setItem(`cache:list:${listId}`, JSON.stringify(data));
 }
+
+/**
+ * Aggiorna solo l'array `todos` dentro la cache esistente (nome, colore,
+ * ordinamento, ecc. restano quelli già salvati), invece di sovrascrivere
+ * l'intera struttura con il solo array: usata dagli optimistic update
+ * (toggle/crea/modifica/elimina un todo), che conoscono solo la lista di
+ * todo aggiornata, non l'intero ListDetailsResponse.
+ */
+export async function updateListTodosCacheTodos(
+  listId: number | string,
+  todos: unknown[]
+): Promise<void> {
+  const raw = await AsyncStorage.getItem(`cache:list:${listId}`);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      parsed.todos = todos;
+      await AsyncStorage.setItem(`cache:list:${listId}`, JSON.stringify(parsed));
+    }
+  } catch {
+    // Cache corrotta: la fetch successiva la sovrascriverà comunque.
+  }
+}

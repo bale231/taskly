@@ -20,6 +20,7 @@ import {
   Dimensions,
   Image,
   Keyboard,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -546,7 +547,19 @@ export default function HomeScreen({ navigation }: Props) {
 
   if (!user) {
     return (
-      <View className="flex-1 items-center justify-center bg-gray-100 dark:bg-gray-900">
+      <View className="flex-1 items-center justify-center gap-6 bg-gray-100 dark:bg-gray-900">
+        <Image
+          source={
+            Platform.OS === "android"
+              ? isDark
+                ? require("../../assets/android-logo-theme-dark.png")
+                : require("../../assets/android-logo-theme-light.png")
+              : isDark
+                ? require("../../assets/logo-theme-dark.png")
+                : require("../../assets/logo-theme-light.png")
+          }
+          style={{ width: 165, height: 52, resizeMode: "contain" }}
+        />
         <ActivityIndicator size="large" color="#3B82F6" />
       </View>
     );

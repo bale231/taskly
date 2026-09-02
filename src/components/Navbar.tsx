@@ -2,7 +2,7 @@ import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useNavigation } from "@react-navigation/native";
 import { LogOut, User as UserIcon } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   Extrapolation,
   interpolate,
@@ -127,9 +127,13 @@ export default function Navbar({ scrollY }: NavbarProps) {
       >
         <Image
           source={
-            isDark
-              ? require("../../assets/logo-theme-dark.png")
-              : require("../../assets/logo-theme-light.png")
+            Platform.OS === "android"
+              ? isDark
+                ? require("../../assets/android-logo-theme-dark.png")
+                : require("../../assets/android-logo-theme-light.png")
+              : isDark
+                ? require("../../assets/logo-theme-dark.png")
+                : require("../../assets/logo-theme-light.png")
           }
           // Stesso box per entrambi i temi, ma il file light appare più
           // piccolo a percezione anche a parità di width/height: un

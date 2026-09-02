@@ -249,6 +249,7 @@ export async function createTodo(
     method: "POST",
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`Errore creazione todo: ${res.status}`);
   invalidateCache(/^lists?:/);
   return res.json();
 }
@@ -257,6 +258,7 @@ export async function toggleTodo(todoId: number) {
   const res = await fetchWithAuth(`${API_URL}/todos/${todoId}/toggle/`, {
     method: "PATCH",
   });
+  if (!res.ok) throw new Error(`Errore toggle todo: ${res.status}`);
   invalidateCache(/^lists?:/);
   return res.json();
 }
@@ -265,8 +267,10 @@ export async function deleteTodo(todoId: number) {
   const res = await fetchWithAuth(`${API_URL}/todos/${todoId}/`, {
     method: "DELETE",
   });
+  if (!res.ok) throw new Error(`Errore eliminazione todo: ${res.status}`);
   invalidateCache(/^lists?:/);
-  return res.json();
+  // DELETE risponde tipicamente 204 No Content: nessun body da parsare.
+  return null;
 }
 
 // ✅ PATCH modifica titolo di una ToDo (e opzionalmente quantità/unità)
@@ -286,6 +290,7 @@ export async function updateTodo(
     method: "PATCH",
     body: JSON.stringify(body),
   });
+  if (!res.ok) throw new Error(`Errore aggiornamento todo: ${res.status}`);
   invalidateCache(/^lists?:/);
   return res.json();
 }
