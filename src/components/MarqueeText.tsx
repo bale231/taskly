@@ -12,6 +12,12 @@ interface MarqueeTextProps {
   children: string;
   className?: string;
   style?: TextStyle;
+  /** Se passato, la prima occorrenza (case-insensitive) viene evidenziata,
+   * come HighlightText — qui reimplementato invece di riusare quel
+   * componente perché il testo deve restare una singola stringa passata
+   * al layout/onTextLayout per calcolare l'overflow dello scroll. */
+  highlight?: string;
+  highlightClassName?: string;
 }
 
 /**
@@ -20,7 +26,13 @@ interface MarqueeTextProps {
  * il marquee al click sul titolo nella webapp (2.5s, ease-in-out). Attivo
  * solo se il testo eccede davvero lo spazio disponibile.
  */
-export default function MarqueeText({ children, className, style }: MarqueeTextProps) {
+export default function MarqueeText({
+  children,
+  className,
+  style,
+  highlight,
+  highlightClassName = "bg-yellow-200 text-gray-900 dark:bg-yellow-500/40 dark:text-white",
+}: MarqueeTextProps) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [textWidth, setTextWidth] = useState(0);
   const translateX = useSharedValue(0);
@@ -52,9 +64,29 @@ export default function MarqueeText({ children, className, style }: MarqueeTextP
           numberOfLines={1}
           onLayout={onTextLayout}
         >
-          {children}
+          {renderHighlighted(children, highlight, highlightClassName)}
         </Text>
       </Animated.View>
     </Pressable>
+  );
+}
+
+function renderHighlighted(text: string, highlight: string | undefined, highlightClassName: string) {
+  const trimmed = highlight?.trim();
+  if (!trimmed) return text;
+
+  const index = text.toLowerCase().indexOf(trimmed.toLowerCase());
+  if (index === -1) return text;
+
+  const before = text.slice(0, index);
+  const match = text.slice(index, index + trimmed.length);
+  const after = text.slice(index + trimmed.length);
+
+  return (
+    <>
+      {before}
+      <Text className={highlightClassName}>{match}</Text>
+      {after}
+    </>
   );
 }

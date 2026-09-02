@@ -86,6 +86,8 @@ interface TodoRowProps {
   /** Indice nella lista visibile: usato solo per lo stagger del flip 3D
    * della checkbox quando editMode cambia (una riga dopo l'altra). */
   index: number;
+  /** Termine di ricerca corrente, per evidenziare il match nel titolo. */
+  searchQuery: string;
   onDrag: () => void;
   onToggle: (todoId: number) => void;
   onToggleSelect: (todoId: number) => void;
@@ -110,6 +112,7 @@ const TodoRow = memo(function TodoRow({
   canDrag,
   isActive,
   index,
+  searchQuery,
   onDrag,
   onToggle,
   onToggleSelect,
@@ -162,6 +165,7 @@ const TodoRow = memo(function TodoRow({
                 className={`text-xl font-semibold ${
                   todo.completed ? "text-gray-400 line-through" : "text-gray-900 dark:text-white"
                 }`}
+                highlight={searchQuery}
               >
                 {todo.title}
               </MarqueeText>
@@ -706,6 +710,12 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         data={isLoading ? [] : filteredTodos}
         keyExtractor={(todo) => String(todo.id)}
         onDragEnd={({ data }) => handleReorder(data)}
+        // Ogni riga (RowItem) è React.memo internamente alla libreria e non
+        // sa che filteredTodos è cambiato solo perché cambia `data`: senza
+        // extraData, cancellare una lettera nella ricerca lasciava la lista
+        // visivamente ferma al filtro precedente finché qualcos'altro non
+        // forzava un re-render.
+        extraData={searchQuery}
         // Default della libreria è 0 (nessuna soglia): il Pan interno della
         // FlatList (sempre attivo su tutta l'area, per gestire il drag una
         // volta iniziato con onLongPress) competeva con lo swipe orizzontale
@@ -749,6 +759,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             canDrag={canDrag}
             isActive={isActive}
             index={getIndex() ?? 0}
+            searchQuery={searchQuery}
             onDrag={drag}
             onToggle={handleToggle}
             onToggleSelect={(todoId) =>

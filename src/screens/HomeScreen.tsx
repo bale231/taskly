@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -95,6 +95,38 @@ const CARD_ACCENT_HEX: Record<string, string> = {
   red: "#EF4444",
   purple: "#A855F7",
 };
+
+/**
+ * Avvolge la lista di card con un fade in (Reanimated), tranne mentre la
+ * ricerca è attiva: un Animated.View con key stabile aggiornato ad ogni
+ * tasto premuto poteva disallineare temporaneamente cosa si vede da cosa
+ * React ha già aggiornato (la lista filtrata sembrava non aggiornarsi
+ * cancellando una lettera). Un View semplice durante la ricerca non ha
+ * questo problema, a costo di perdere il fade in quel caso.
+ *
+ * Niente `exiting`: con una key che cambia (serve per far ripartire il
+ * fade-in al cambio Attive/Archivio), il vecchio contenuto in uscita
+ * restava sovrapposto al nuovo in entrata per la durata dell'animazione,
+ * mostrando per un istante i pulsanti/icone del set sbagliato (es. il tasto
+ * "Disarchivia" delle liste archiviate sopra quello "Archivia" delle
+ * attive). Il vecchio ora sparisce subito, il nuovo continua a fare fade-in.
+ */
+function ListsContainer({
+  searchActive,
+  showArchived,
+  children,
+}: {
+  searchActive: boolean;
+  showArchived: boolean;
+  children: ReactNode;
+}) {
+  if (searchActive) return <View>{children}</View>;
+  return (
+    <Animated.View key={`lists-${showArchived}`} entering={FadeIn.duration(220)}>
+      {children}
+    </Animated.View>
+  );
+}
 
 export default function HomeScreen({ navigation }: Props) {
   const { theme } = useTheme();
@@ -692,7 +724,6 @@ export default function HomeScreen({ navigation }: Props) {
             <Animated.View
               key={`empty-${showArchived}`}
               entering={FadeIn.duration(220)}
-              exiting={FadeOut.duration(160)}
             >
               <Image
                 source={
@@ -715,7 +746,7 @@ export default function HomeScreen({ navigation }: Props) {
             </Animated.View>
           )
         ) : (
-          <Animated.View key={`lists-${showArchived}`} entering={FadeIn.duration(220)} exiting={FadeOut.duration(160)}>
+          <ListsContainer searchActive={!!searchQuery.trim()} showArchived={showArchived}>
             {groupedLists.map((group) => (
             <View key={group.categoryName} className="mb-8">
               <Text className="mb-4 text-2xl font-bold text-gray-800 dark:text-gray-200">
@@ -797,9 +828,11 @@ export default function HomeScreen({ navigation }: Props) {
                                 </Text>
                               </View>
                             )}
-                            <Text className="mb-2 text-xl font-semibold text-gray-900 dark:text-white">
-                              {list.name}
-                            </Text>
+                            <HighlightText
+                              text={list.name}
+                              highlight={searchQuery}
+                              className="mb-2 text-xl font-semibold text-gray-900 dark:text-white"
+                            />
                             {matchedTodo ? (
                               <HighlightText
                                 text={matchedTodo.text || matchedTodo.title || ""}
@@ -849,7 +882,7 @@ export default function HomeScreen({ navigation }: Props) {
               </View>
             </View>
           ))}
-          </Animated.View>
+          </ListsContainer>
         )}
       </Animated.ScrollView>
       </Pressable>
