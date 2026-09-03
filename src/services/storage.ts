@@ -167,17 +167,43 @@ export async function setListTodosCache(listId: number | string, data: unknown):
   await AsyncStorage.setItem(`cache:list:${listId}`, JSON.stringify(data));
 }
 
+const LIST_TODOS_CACHE_DEBOUNCE_MS = 400;
+const listTodosCacheTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const listTodosCachePending = new Map<string, unknown[]>();
+
 /**
  * Aggiorna solo l'array `todos` dentro la cache esistente (nome, colore,
  * ordinamento, ecc. restano quelli già salvati), invece di sovrascrivere
  * l'intera struttura con il solo array: usata dagli optimistic update
  * (toggle/crea/modifica/elimina un todo), che conoscono solo la lista di
  * todo aggiornata, non l'intero ListDetailsResponse.
+ *
+ * Con debounce: con liste da 90-100+ todo, riscrivere l'intera struttura
+ * (parse + stringify + I/O su AsyncStorage) ad OGNI singolo tap rallentava
+ * vistosamente la UI e in alcuni casi mandava in crash l'app spuntando più
+ * todo di fila. Qui si accoda solo l'ultimo array richiesto per quella
+ * lista e si scrive una volta sola dopo un breve periodo di inattività,
+ * invece di una scrittura pesante per ogni singola interazione.
  */
-export async function updateListTodosCacheTodos(
-  listId: number | string,
-  todos: unknown[]
-): Promise<void> {
+export function updateListTodosCacheTodos(listId: number | string, todos: unknown[]): void {
+  const key = String(listId);
+  listTodosCachePending.set(key, todos);
+
+  const existingTimer = listTodosCacheTimers.get(key);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  listTodosCacheTimers.set(
+    key,
+    setTimeout(() => {
+      listTodosCacheTimers.delete(key);
+      const latestTodos = listTodosCachePending.get(key);
+      listTodosCachePending.delete(key);
+      if (latestTodos) flushListTodosCache(key, latestTodos);
+    }, LIST_TODOS_CACHE_DEBOUNCE_MS)
+  );
+}
+
+async function flushListTodosCache(listId: string, todos: unknown[]): Promise<void> {
   const raw = await AsyncStorage.getItem(`cache:list:${listId}`);
   if (!raw) return;
   try {
