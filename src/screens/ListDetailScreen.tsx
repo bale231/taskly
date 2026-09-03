@@ -822,7 +822,10 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           colorata sopra a opacità moderata, esattamente come AnimatedAlert
           e i menu di Home — quello è il pattern che dà l'effetto vetro
           marcato, non il tintColor nativo del GlassView. */}
-      <View className="absolute bottom-6 left-6 right-6 flex-row justify-between">
+      <View
+        className="absolute left-6 right-6 flex-row justify-between"
+        style={{ bottom: insets.bottom + 24 }}
+      >
         <Pressable
           onPress={() => {
             editBubbleRef.current?.trigger();

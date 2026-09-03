@@ -809,13 +809,18 @@ export default function HomeScreen({ navigation }: Props) {
                         }}
                       >
                         <Pressable
-                          onPress={() =>
+                          onPress={() => {
+                            // In modalità modifica il tap sulla card non deve
+                            // aprire la lista: quella modalità serve solo per
+                            // modificare/archiviare/eliminare le liste stesse,
+                            // non per navigare dentro il loro contenuto.
+                            if (editMode) return;
                             navigation.navigate("ListDetail", {
                               listId: list.id,
                               todosCount: list.todos.length,
                               initialSearch: matchedTodo ? searchQuery.trim() : undefined,
-                            })
-                          }
+                            });
+                          }}
                           className={`min-h-[110px] flex-row items-center rounded-xl border border-gray-200/50 p-4 dark:border-white/20 ${CARD_BG[list.color] ?? CARD_BG.blue}`}
                         >
                           {/* Barretta accento accanto al testo, non più sul
