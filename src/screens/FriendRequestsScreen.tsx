@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getCurrentUserJWT } from "../api/auth";
 import {
   acceptFriendRequest,
   fetchFriendRequests,
@@ -13,6 +14,7 @@ import {
 import AnimatedAlert from "../components/AnimatedAlert";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
 import type { RootStackParamList } from "../navigation/types";
+import { getAppCache, setAppCache } from "../services/storage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "FriendRequests">;
 
@@ -32,21 +34,36 @@ export default function FriendRequestsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [alert, setAlert] = useState<Alert>(null);
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
+  const loadRequests = useCallback(async (hadCache: boolean) => {
+    if (!hadCache) setLoading(true);
     try {
       const data = await fetchFriendRequests();
       setRequests(data);
+      const user = await getCurrentUserJWT();
+      if (user) await setAppCache("friendRequests", data, user.username ?? user.email ?? "unknown");
     } catch (err) {
       console.error("Errore caricamento richieste:", err);
-      setAlert({ type: "error", message: "Errore nel caricamento delle richieste" });
+      if (!hadCache) setAlert({ type: "error", message: "Errore nel caricamento delle richieste" });
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadRequests();
+    const init = async () => {
+      // Richieste già scaricate dal prefetch globale (login/avvio app):
+      // mostrate subito, poi un fetch silenzioso in background le aggiorna.
+      const user = await getCurrentUserJWT();
+      const cached = user
+        ? await getAppCache<FriendRequest[]>("friendRequests", user.username ?? user.email ?? "unknown")
+        : null;
+      if (cached) {
+        setRequests(cached);
+        setLoading(false);
+      }
+      loadRequests(!!cached);
+    };
+    init();
   }, [loadRequests]);
 
   const handleAccept = async (request: FriendRequest) => {

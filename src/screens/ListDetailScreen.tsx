@@ -17,12 +17,14 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
+  InteractionManager,
   Keyboard,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type GestureResponderEvent,
 } from "react-native";
 import DraggableFlatList from "react-native-draggable-flatlist";
 import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from "react-native-reanimated";
@@ -44,6 +46,7 @@ import GlassSurface from "../components/GlassSurface";
 import { GlassBottomSheetBackdrop, GlassBottomSheetBackground } from "../components/GlassBottomSheet";
 import MarqueeText from "../components/MarqueeText";
 import MoveTodoModal from "../components/MoveTodoModal";
+import ParticleBurst, { type ParticleBurstRef } from "../components/ParticleBurst";
 import SwipeableRow from "../components/SwipeableRow";
 import TodoRowSkeleton from "../components/TodoRowSkeleton";
 import { useAlert } from "../context/AlertContext";
@@ -58,7 +61,18 @@ import {
   onTempIdResolved,
   processQueue,
 } from "../services/syncQueue";
-import { getListTodosCache, setListTodosCache, updateListTodosCacheTodos } from "../services/storage";
+import {
+  playCreateFeedback,
+  playDeleteFeedback,
+  playTodoCompleteFeedback,
+  playTodoUncompleteFeedback,
+} from "../services/feedback";
+import {
+  getListTodosCache,
+  getListTodosCacheSync,
+  setListTodosCache,
+  updateListTodosCacheTodos,
+} from "../services/storage";
 import type { Todo, TodoSortOption } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ListDetail">;
@@ -94,7 +108,7 @@ interface TodoRowProps {
   /** Termine di ricerca corrente, per evidenziare il match nel titolo. */
   searchQuery: string;
   onDrag: () => void;
-  onToggle: (todoId: number) => void;
+  onToggle: (todoId: number, event: GestureResponderEvent) => void;
   onToggleSelect: (todoId: number) => void;
   onEdit: (todo: Todo) => void;
   onDelete: (todoId: number) => void;
@@ -154,7 +168,7 @@ const TodoRow = memo(function TodoRow({
               checkedColor="#16A34A"
               uncheckedColor="#BFBFC0"
               settledColor="#9CA3AF"
-              onPress={() => onToggle(todo.id)}
+              onPress={(event) => onToggle(todo.id, event)}
               editMode={editMode}
               editChecked={selected}
               editCheckedColor="#2563EB"
@@ -252,18 +266,39 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   const isDark = theme === "dark";
   const { showAlert } = useAlert();
 
+  // Lazy initializer: letto UNA volta, in modo sincrono, dallo specchio in
+  // memoria della cache (popolato dal prefetch all'avvio/login o da una
+  // visita precedente a questa stessa lista in questa sessione). Serve a
+  // evitare che ogni volta che si esce e si rientra in una lista già vista
+  // (la schermata viene smontata e rimontata da zero ad ogni push/pop nello
+  // stack) compaia per un frame lo skeleton in attesa della lettura async
+  // di AsyncStorage — qui i dati sono già pronti al primissimo render.
+  //
+  // Il map+sort dei todo, però, NON va fatto qui nel lazy initializer: con
+  // liste grandi (100+ todo) è abbastanza pesante da bloccare il thread JS
+  // proprio nel frame in cui la transizione nativa di ingresso (Home ->
+  // ListDetail) sta animando, facendola percepire come uno scatto secco
+  // invece che fluida. `todos` parte vuoto ed è popolato subito dopo, in un
+  // effect che gira DOPO il commit del primo render (quindi dopo che
+  // l'animazione è già partita) — vedi useEffect qui sotto.
+  const initialCache = getListTodosCacheSync<ListDetailsResponse>(listId);
   const [todos, setTodos] = useState<Todo[]>([]);
-  const [listName, setListName] = useState("");
-  const [listColor, setListColor] = useState("blue");
-  const [isShared, setIsShared] = useState(false);
+  const [listName, setListName] = useState(initialCache?.name ?? "");
+  const [listColor, setListColor] = useState(initialCache?.color || "blue");
+  const [isShared, setIsShared] = useState(initialCache?.is_shared || false);
   const [sharedWith, setSharedWith] = useState<Array<{ full_name: string }>>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!initialCache);
 
-  const [sortOption, setSortOption] = useState<TodoSortOption>("created");
+  const [sortOption, setSortOption] = useState<TodoSortOption>(
+    initialCache?.sort_order === "alphabetical" || initialCache?.sort_order === "completed"
+      ? initialCache.sort_order
+      : "created"
+  );
   const sortMenuRef = useRef<BottomSheetModal>(null);
 
   const [editMode, setEditMode] = useState(false);
   const editBubbleRef = useRef<BubbleTapEffectRef>(null);
+  const particleBurstRef = useRef<ParticleBurstRef>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
 
@@ -369,12 +404,14 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   }, [showAlert]);
 
   useEffect(() => {
-    // Cache locale mostrata subito, prima di qualunque fetch di rete: se
-    // presente, la fetch reale che segue è "silenziosa" (aggiorna senza
-    // far ricomparire lo skeleton); altrimenti è quella visibile normale.
-    const load = async () => {
-      const cached = await getListTodosCache<ListDetailsResponse>(listId);
-      if (cached) {
+    // Il caso cache-hit ha nome/colore/is_shared già impostati sincronamente
+    // dai lazy initializer sopra — qui resta solo popolare l'array `todos`
+    // (il map+sort potenzialmente pesante), fatto apposta DENTRO
+    // `runAfterInteractions`: aspetta che la transizione nativa di ingresso
+    // sia terminata prima di fare quel lavoro, così non le ruba frame e la
+    // navigazione resta fluida anche su liste da 100+ todo.
+    const applyTodos = (cached: ListDetailsResponse) => {
+      InteractionManager.runAfterInteractions(() => {
         const todosWithIndex: Todo[] = cached.todos.map((t: Todo, index: number) => ({
           ...t,
           _originalIndex: t._originalIndex ?? index,
@@ -385,6 +422,18 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             : "created";
         setSortOption(effectiveSort);
         setTodos(sortTodos(todosWithIndex, effectiveSort));
+      });
+    };
+
+    const load = async () => {
+      if (initialCache) {
+        applyTodos(initialCache);
+        fetchTodos(true);
+        return;
+      }
+      const cached = await getListTodosCache<ListDetailsResponse>(listId);
+      if (cached) {
+        applyTodos(cached);
         setListName(cached.name);
         setListColor(cached.color || "blue");
         setIsShared(cached.is_shared || false);
@@ -394,6 +443,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     };
     load();
     loadAllLists();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchTodos, loadAllLists, listId]);
 
   // Un todo creato offline vive con un ID temporaneo (negativo) finché la
@@ -411,7 +461,15 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     });
   }, [listId]);
 
-  const handleToggle = (todoId: number) => {
+  const handleToggle = (todoId: number, event: GestureResponderEvent) => {
+    const wasCompleted = todos.find((t) => t.id === todoId)?.completed ?? false;
+    if (wasCompleted) {
+      playTodoUncompleteFeedback();
+    } else {
+      playTodoCompleteFeedback();
+      const { pageX, pageY } = event.nativeEvent;
+      particleBurstRef.current?.trigger(pageX, pageY);
+    }
     setTodos((prev) => {
       const updated = prev.map((t) => (t.id === todoId ? { ...t, completed: !t.completed } : t));
       const sorted = sortOption === "completed" ? sortTodos(updated, "completed") : updated;
@@ -422,6 +480,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   };
 
   const handleDelete = (todoId: number) => {
+    playDeleteFeedback();
     setTodos((prev) => {
       const updated = prev.filter((t) => t.id !== todoId);
       updateListTodosCacheTodos(listId, updated);
@@ -470,6 +529,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     });
 
     enqueueCreateTodo({ tempId, listId, title, quantity: qty, unit, description }).then(processQueue);
+    playCreateFeedback();
 
     setTitle("");
     setQuantityValue("");
@@ -533,6 +593,8 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       const current = todos.find((t) => t.id === id);
       return current && current.completed !== bulkToggleTarget;
     });
+    if (bulkToggleTarget) playTodoCompleteFeedback();
+    else playTodoUncompleteFeedback();
     setTodos((prev) => {
       const updated = prev.map((t) =>
         selectedIds.includes(t.id) ? { ...t, completed: bulkToggleTarget } : t
@@ -1084,6 +1146,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             </Pressable>
             <Pressable
               onPress={() => {
+                playDeleteFeedback();
                 setTodos((prev) => {
                   const updated = prev.filter((t) => !selectedIds.includes(t.id));
                   updateListTodosCacheTodos(listId, updated);
@@ -1165,6 +1228,8 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         allLists={allLists}
         onMove={handleBulkMove}
       />
+
+      <ParticleBurst ref={particleBurstRef} />
     </View>
   );
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { getCurrentUserJWT } from "../api/auth";
 import { fetchFriends, removeFriend, type Friend } from "../api/friends";
 import AnimatedAlert from "../components/AnimatedAlert";
 import BubbleModal from "../components/BubbleModal";
@@ -11,6 +12,7 @@ import GlassSurface from "../components/GlassSurface";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
+import { getAppCache, setAppCache } from "../services/storage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Friends">;
 
@@ -33,21 +35,36 @@ export default function FriendsScreen({ navigation }: Props) {
   const [alert, setAlert] = useState<Alert>(null);
   const [removeConfirmId, setRemoveConfirmId] = useState<number | null>(null);
 
-  const loadFriends = useCallback(async () => {
-    setLoading(true);
+  const loadFriends = useCallback(async (hadCache: boolean) => {
+    if (!hadCache) setLoading(true);
     try {
       const data = await fetchFriends();
       setFriends(data);
+      const user = await getCurrentUserJWT();
+      if (user) await setAppCache("friends", data, user.username ?? user.email ?? "unknown");
     } catch (err) {
       console.error("Errore caricamento amici:", err);
-      setAlert({ type: "error", message: "Errore nel caricamento degli amici" });
+      if (!hadCache) setAlert({ type: "error", message: "Errore nel caricamento degli amici" });
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadFriends();
+    const init = async () => {
+      // Amici già scaricati dal prefetch globale (login/avvio app): mostrati
+      // subito, poi un fetch silenzioso in background li aggiorna se serve.
+      const user = await getCurrentUserJWT();
+      const cached = user
+        ? await getAppCache<Friend[]>("friends", user.username ?? user.email ?? "unknown")
+        : null;
+      if (cached) {
+        setFriends(cached);
+        setLoading(false);
+      }
+      loadFriends(!!cached);
+    };
+    init();
   }, [loadFriends]);
 
   const handleRemove = async (id: number) => {

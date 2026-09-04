@@ -54,6 +54,7 @@ export async function setRefreshToken(refreshToken: string): Promise<void> {
 export async function clearTokens(): Promise<void> {
   await AsyncStorage.multiRemove([ACCESS_TOKEN, REFRESH_TOKEN, PERSISTENT, THEME]);
   await clearHomeCache();
+  await clearAppCache();
 }
 
 export async function isPersistentSession(): Promise<boolean> {
@@ -152,18 +153,41 @@ export async function clearHomeCache(): Promise<void> {
  * specifica (ListDetailScreen): chiave per listId, non serve lo username
  * dato che l'id della lista è già univoco e non condiviso tra account
  * diversi (una lista di un altro utente ha comunque un id diverso).
+ *
+ * Oltre alla copia persistita su AsyncStorage (necessaria per un avvio a
+ * freddo dell'app), viene mantenuto uno specchio in memoria: ListDetailScreen
+ * viene smontata e rimontata da zero ogni volta che si esce e si rientra in
+ * una lista (push/pop nello stack di navigazione), e leggere da AsyncStorage
+ * è comunque asincrono — anche solo un frame di attesa per liste già viste
+ * (o già scaricate dal prefetch iniziale) faceva ricomparire lo skeleton a
+ * ogni rientro. Lo specchio sincrono elimina quel frame per tutto ciò che è
+ * già stato scaricato in questa sessione dell'app.
  */
+const listTodosCacheMemory = new Map<string, unknown>();
+
+export function getListTodosCacheSync<T>(listId: number | string): T | null {
+  const cached = listTodosCacheMemory.get(String(listId));
+  return (cached as T) ?? null;
+}
+
 export async function getListTodosCache<T>(listId: number | string): Promise<T | null> {
-  const raw = await AsyncStorage.getItem(`cache:list:${listId}`);
+  const key = String(listId);
+  const inMemory = listTodosCacheMemory.get(key);
+  if (inMemory) return inMemory as T;
+
+  const raw = await AsyncStorage.getItem(`cache:list:${key}`);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as T;
+    const parsed = JSON.parse(raw) as T;
+    listTodosCacheMemory.set(key, parsed);
+    return parsed;
   } catch {
     return null;
   }
 }
 
 export async function setListTodosCache(listId: number | string, data: unknown): Promise<void> {
+  listTodosCacheMemory.set(String(listId), data);
   await AsyncStorage.setItem(`cache:list:${listId}`, JSON.stringify(data));
 }
 
@@ -187,6 +211,13 @@ const listTodosCachePending = new Map<string, unknown[]>();
  */
 export function updateListTodosCacheTodos(listId: number | string, todos: unknown[]): void {
   const key = String(listId);
+  // Aggiorna subito lo specchio in memoria (sincrono, letto da
+  // getListTodosCacheSync/getListTodosCache): solo la scrittura persistita
+  // su AsyncStorage resta debounced per non appesantire il tap ripetuto.
+  const existingEntry = listTodosCacheMemory.get(key);
+  if (existingEntry && typeof existingEntry === "object") {
+    listTodosCacheMemory.set(key, { ...(existingEntry as object), todos });
+  }
   listTodosCachePending.set(key, todos);
 
   const existingTimer = listTodosCacheTimers.get(key);
@@ -215,4 +246,69 @@ async function flushListTodosCache(listId: string, todos: unknown[]): Promise<vo
   } catch {
     // Cache corrotta: la fetch successiva la sovrascriverà comunque.
   }
+}
+
+const APP_CACHE_KEYS = {
+  friends: "cache:app:friends",
+  friendRequests: "cache:app:friendRequests",
+  notifications: "cache:app:notifications",
+  profile: "cache:app:profile",
+  username: "cache:app:username",
+} as const;
+
+type AppCacheKind = keyof Omit<typeof APP_CACHE_KEYS, "username">;
+
+/**
+ * Cache persistente generica per i dataset scaricati dal prefetch globale
+ * all'avvio (amici, richieste di amicizia, notifiche, profilo utente) —
+ * stessa idea di getHomeCache/setHomeCache ma riusata per più dataset,
+ * scopata per username per evitare di mostrare dati dell'account sbagliato
+ * a cavallo di un logout/login con utenti diversi sullo stesso device.
+ */
+export async function getAppCache<T>(kind: AppCacheKind, currentUsername: string): Promise<T | null> {
+  const savedUsername = await AsyncStorage.getItem(APP_CACHE_KEYS.username);
+  if (savedUsername !== currentUsername) return null;
+
+  const raw = await AsyncStorage.getItem(APP_CACHE_KEYS[kind]);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Come getAppCache, ma senza verificare lo username corrente: usata solo per
+ * il profilo utente in ProfileScreen, l'unico caso in cui lo username non è
+ * ancora noto al momento della lettura (è proprio ciò che si sta per
+ * caricare). Il rischio — mostrare per un istante il profilo cachato di un
+ * account diverso da uno switch precedente — si autocorregge subito che
+ * arriva la risposta fresca di getCurrentUserJWT, quindi è accettabile.
+ */
+export async function getAnyAppCache<T>(kind: AppCacheKind): Promise<T | null> {
+  const raw = await AsyncStorage.getItem(APP_CACHE_KEYS[kind]);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function setAppCache(kind: AppCacheKind, data: unknown, username: string): Promise<void> {
+  await AsyncStorage.multiSet([
+    [APP_CACHE_KEYS[kind], JSON.stringify(data)],
+    [APP_CACHE_KEYS.username, username],
+  ]);
+}
+
+export async function clearAppCache(): Promise<void> {
+  await AsyncStorage.multiRemove([
+    APP_CACHE_KEYS.friends,
+    APP_CACHE_KEYS.friendRequests,
+    APP_CACHE_KEYS.notifications,
+    APP_CACHE_KEYS.profile,
+    APP_CACHE_KEYS.username,
+  ]);
 }

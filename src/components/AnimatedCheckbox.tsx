@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Pressable, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, type GestureResponderEvent } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -13,7 +13,7 @@ const AnimatedPressableBase = Animated.createAnimatedComponent(Pressable);
 interface AnimatedCheckboxProps {
   /** Se assente, l'icona è sempre CheckSquare (es. completamento: cambia solo colore). */
   checked?: boolean;
-  onPress: () => void;
+  onPress: (event: GestureResponderEvent) => void;
   size?: number;
   checkedColor: string;
   uncheckedColor?: string;
@@ -101,9 +101,9 @@ export default function AnimatedCheckbox({
       <AnimatedPressableBase
         style={pressScaleStyle}
         className={className}
-        onPress={() => {
+        onPress={(event) => {
           bounce();
-          onPress();
+          onPress(event);
         }}
         onPressIn={() => {
           scale.value = withTiming(0.85, { duration: 40 });
@@ -127,10 +127,10 @@ export default function AnimatedCheckbox({
     <AnimatedPressableBase
       style={[pressScaleStyle, { width: size, height: size }]}
       className={className}
-      onPress={() => {
+      onPress={(event) => {
         bounce();
         if (editMode) onEditPress?.();
-        else onPress();
+        else onPress(event);
       }}
       onPressIn={() => {
         scale.value = withTiming(0.85, { duration: 40 });

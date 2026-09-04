@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,7 @@ import { useAlert } from "../context/AlertContext";
 import { useNetwork } from "../context/NetworkContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
+import { prefetchAll } from "../services/prefetch";
 import { setTokens } from "../services/storage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
@@ -97,6 +99,7 @@ export default function LoginScreen({ navigation, route }: Props) {
   const [isLoading, setIsLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [preparingData, setPreparingData] = useState(false);
   const [loginMode, setLoginMode] = useState<"username" | "email">("username");
   const rememberMeScale = useRef(new Animated.Value(1)).current;
 
@@ -238,6 +241,15 @@ export default function LoginScreen({ navigation, route }: Props) {
       if (user) {
         // Sostituisce il MutationObserver su data-access-token della webapp.
         await reloadTheme();
+        // Prefetch di tutto (liste+todo, categorie, amici, richieste,
+        // notifiche) prima di entrare in Home: così la prima schermata
+        // vista dopo il login è già piena di dati, senza skeleton né fetch
+        // on-demand durante la navigazione successiva. Se fallisce (rete
+        // instabile subito dopo il login), si entra comunque: le singole
+        // schermate ricadranno sulla propria fetch normale.
+        setPreparingData(true);
+        await prefetchAll().catch(() => {});
+        setPreparingData(false);
         // reset, non replace: vedi commento sopra in checkAlreadyLoggedIn.
         navigation.reset({ index: 0, routes: [{ name: "Home" }] });
       } else {
@@ -251,13 +263,17 @@ export default function LoginScreen({ navigation, route }: Props) {
     setIsLoading(false);
   };
 
-  // Show loading screen while checking auth
-  if (checkingAuth) {
+  // Show loading screen while checking auth or prefetching data post-login
+  if (checkingAuth || preparingData) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-100">
         <View className="items-center gap-4">
           <Image
-            source={require("../../assets/logo-theme-light.png")}
+            source={
+              Platform.OS === "android"
+                ? require("../../assets/android-logo-theme-light.png")
+                : require("../../assets/logo-theme-light.png")
+            }
             style={{ width: 200, height: 62, resizeMode: "contain" }}
           />
           <ActivityIndicator size="large" color="#3B82F6" />
@@ -287,7 +303,11 @@ export default function LoginScreen({ navigation, route }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-theme-light.png")}
+            source={
+              Platform.OS === "android"
+                ? require("../../assets/android-logo-theme-light.png")
+                : require("../../assets/logo-theme-light.png")
+            }
             style={{ width: 340, height: 106, resizeMode: "contain" }}
           />
         </View>

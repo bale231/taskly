@@ -68,6 +68,7 @@ import WiggleView from "../components/WiggleView";
 import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
+import { playCreateFeedback, playDeleteFeedback } from "../services/feedback";
 import {
   getHomeCache,
   getLastListsCount,
@@ -290,9 +291,13 @@ export default function HomeScreen({ navigation }: Props) {
         setUser(resUser);
 
         // Cache locale mostrata subito, prima di qualunque fetch di rete:
-        // solo al primissimo focus di questo mount (i focus successivi
-        // hanno già lo state in memoria, non serve rileggerla da disco).
-        let hadCache = false;
+        // solo al primissimo focus di questo mount viene riletta da disco
+        // (i focus successivi hanno già lo state in memoria). In entrambi i
+        // casi, se c'è già qualcosa da mostrare (da disco o da uno stato
+        // precedente), la fetch di refresh che segue deve restare silenziosa
+        // — altrimenti ogni volta che si torna in Home ricompare lo
+        // skeleton anche se le liste sono già visibili a schermo.
+        let hadCache = !isFirstLoadThisMount && !isDifferentUser;
         if (isFirstLoadThisMount) {
           const [cachedLists, cachedCategories] = await Promise.all([
             getHomeCache<TodoList[]>("lists", resUser.username),
@@ -379,6 +384,7 @@ export default function HomeScreen({ navigation }: Props) {
         if (created?.id) {
           setLists((prev) => [...prev, created as TodoList]);
           showAlert("success", "Lista creata con successo!");
+          playCreateFeedback();
         } else {
           showAlert("error", "Impossibile creare la lista. Riprova.");
           return;
@@ -408,6 +414,7 @@ export default function HomeScreen({ navigation }: Props) {
   const handleDeleteList = async (id: number) => {
     setLists((prev) => prev.filter((list) => list.id !== id));
     showAlert("success", "Lista eliminata");
+    playDeleteFeedback();
     try {
       await deleteList(id);
     } catch (err) {

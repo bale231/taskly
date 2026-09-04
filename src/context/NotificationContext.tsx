@@ -14,6 +14,8 @@ import {
   markNotificationAsRead as markNotificationAsReadAPI,
   type Notification,
 } from "../api/notifications";
+import { getCurrentUserJWT } from "../api/auth";
+import { getAppCache, setAppCache } from "../services/storage";
 
 export type { Notification };
 
@@ -55,6 +57,11 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
     try {
       const data = await fetchNotificationsAPI();
       setNotifications(data);
+      // getCurrentUserJWT() è cachata con TTL breve (vedi api/auth.ts): qui
+      // non costa una nuova richiesta di rete nella stragrande maggioranza
+      // dei casi, dato che qualcos'altro l'ha già richiesta di recente.
+      const user = await getCurrentUserJWT();
+      if (user) await setAppCache("notifications", data, user.username ?? user.email ?? "unknown");
     } catch (error) {
       // console.warn, non console.error: il polling ogni 30s può incontrare
       // errori di rete transitori che non devono aprire la LogBox a schermo
@@ -94,7 +101,21 @@ export const NotificationProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    fetchNotifications();
+    const init = async () => {
+      // Mostra subito le notifiche già scaricate dal prefetch globale
+      // (login/avvio app), invece di un elenco vuoto finché non risponde
+      // la rete: il fetch reale che segue aggiorna in silenzio se serve.
+      const user = await getCurrentUserJWT();
+      if (user) {
+        const cached = await getAppCache<Notification[]>(
+          "notifications",
+          user.username ?? user.email ?? "unknown"
+        );
+        if (cached) setNotifications(cached);
+      }
+      fetchNotifications();
+    };
+    init();
 
     pollRef.current = setInterval(fetchNotifications, POLL_INTERVAL);
     return () => {

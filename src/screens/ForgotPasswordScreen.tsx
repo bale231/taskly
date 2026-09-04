@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -182,7 +183,11 @@ export default function ForgotPasswordScreen({ navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-theme-light.png")}
+            source={
+              Platform.OS === "android"
+                ? require("../../assets/android-logo-theme-light.png")
+                : require("../../assets/logo-theme-light.png")
+            }
             style={{ width: 270, height: 84, resizeMode: "contain" }}
           />
         </View>

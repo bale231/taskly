@@ -1,7 +1,16 @@
 import { useState } from "react";
-import { Pressable, Text, View, type LayoutChangeEvent, type TextStyle } from "react-native";
+import {
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type NativeSyntheticEvent,
+  type TextLayoutEventData,
+  type TextStyle,
+} from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -41,7 +50,16 @@ export default function MarqueeText({
   const canScroll = overflow > 4;
 
   const onContainerLayout = (e: LayoutChangeEvent) => setContainerWidth(e.nativeEvent.layout.width);
-  const onTextLayout = (e: LayoutChangeEvent) => setTextWidth(e.nativeEvent.layout.width);
+  // `onTextLayout` (non `onLayout`): riporta la larghezza di ogni riga di
+  // testo calcolata durante lo shaping del testo stesso, PRIMA che il
+  // layout box la vincoli/clippi — è l'equivalente RN dello `scrollWidth`
+  // del DOM usato dalla webapp. `onLayout` invece riporta sempre le
+  // dimensioni finali del box dopo la risoluzione dei vincoli flex del
+  // genitore, che coincidevano sempre con containerWidth (bug di oggi).
+  const onTextLayout = (e: NativeSyntheticEvent<TextLayoutEventData>) => {
+    const width = e.nativeEvent.lines[0]?.width ?? 0;
+    setTextWidth(width);
+  };
 
   const handlePress = () => {
     if (!canScroll) return;
@@ -55,19 +73,44 @@ export default function MarqueeText({
     transform: [{ translateX: translateX.value }],
   }));
 
+  // Ogni riga di ListDetailScreen è avvolta in SwipeableRow, che intercetta
+  // i gesti con un GestureDetector (Gesture.Pan, react-native-gesture-handler)
+  // per lo swipe-to-delete/modifica: un <Pressable> di RN "core" annidato lì
+  // sotto perde sistematicamente il tap su Android, perché i due sistemi di
+  // gesture (RNGH e la Response System nativa di RN) non si compongono da
+  // soli. Usando anche qui un Gesture.Tap() di RNGH, il tap viene arbitrato
+  // correttamente insieme al Pan del genitore invece di essere rubato.
+  const tap = Gesture.Tap().onEnd(() => {
+    "worklet";
+    runOnJS(handlePress)();
+  });
+
   return (
-    <Pressable onPress={handlePress} onLayout={onContainerLayout} style={{ flex: 1, overflow: "hidden" }}>
-      <Animated.View style={animatedStyle}>
-        <Text
-          className={className}
-          style={[style, { alignSelf: "flex-start" }]}
-          numberOfLines={1}
-          onLayout={onTextLayout}
-        >
-          {renderHighlighted(children, highlight, highlightClassName)}
-        </Text>
-      </Animated.View>
-    </Pressable>
+    <GestureDetector gesture={tap}>
+      <View onLayout={onContainerLayout} style={{ flex: 1, overflow: "hidden" }}>
+        {/* Misura sempre la stringa piatta, mai il markup con l'highlight
+            annidato sotto (un <Text> figlio con l'highlight rompe la misura
+            allo stesso modo). `onTextLayout` invece di `onLayout`: riporta
+            la larghezza di ogni riga calcolata durante lo shaping del testo
+            stesso, PRIMA che il layout box la vincoli al contenitore — è
+            l'equivalente RN dello `scrollWidth` del DOM che la webapp usava
+            per lo stesso identico effetto. `onLayout` riportava sempre le
+            dimensioni finali del box già vincolato dal `flex: 1` del
+            genitore, che coincidevano sempre con containerWidth qualunque
+            wrapper si provasse (il vero bug di oggi, ci sono volute diverse
+            iterazioni per isolarlo). */}
+        <View style={{ position: "absolute", opacity: 0 }} pointerEvents="none">
+          <Text className={className} style={style} onTextLayout={onTextLayout}>
+            {children}
+          </Text>
+        </View>
+        <Animated.View style={animatedStyle}>
+          <Text className={className} style={[style, { alignSelf: "flex-start" }]} numberOfLines={1}>
+            {renderHighlighted(children, highlight, highlightClassName)}
+          </Text>
+        </Animated.View>
+      </View>
+    </GestureDetector>
   );
 }
 

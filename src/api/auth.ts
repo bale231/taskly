@@ -36,6 +36,7 @@ export const login = async (
       // per utente) poteva ancora restituire per qualche secondo le liste
       // del login precedente.
       invalidateCache();
+      invalidateCurrentUserCache();
       return {
         success: true as const,
         accessToken: data.access as string,
@@ -152,34 +153,69 @@ export async function proactiveTokenRefresh(): Promise<void> {
 }
 
 // 🔐 Recupero utente corrente tramite JWT
+//
+// Cache in memoria con TTL breve: getCurrentUserJWT() viene chiamata da
+// molti punti indipendenti ravvicinati nel tempo (polling notifiche ogni
+// 30s, mount di più schermate, prefetch all'avvio) — senza questa cache
+// ognuna di quelle chiamate era una richiesta HTTP separata al backend
+// (PythonAnywhere free tier, di fatto un solo worker), che si sommavano
+// alle richieste "vere" della UI e contribuivano al lag generale dell'app.
+// TTL breve apposta: non deve nascondere per troppo tempo un cambio reale
+// (es. logout/login), solo assorbire le richieste concentrate nello stesso
+// istante o a pochi secondi di distanza.
+const CURRENT_USER_CACHE_TTL_MS = 15_000;
+let _currentUserCache: { value: any; expiresAt: number } | null = null;
+let _currentUserPromise: Promise<any> | null = null;
+
+export function invalidateCurrentUserCache(): void {
+  _currentUserCache = null;
+}
+
 export async function getCurrentUserJWT() {
-  let token = await getAccessToken();
+  if (_currentUserCache && _currentUserCache.expiresAt > Date.now()) {
+    return _currentUserCache.value;
+  }
+  // Chiamate concorrenti mentre la prima è già in volo condividono la
+  // stessa richiesta, invece di partirne una a testa.
+  if (_currentUserPromise) return _currentUserPromise;
 
-  if (!token) return null;
+  _currentUserPromise = (async () => {
+    let token = await getAccessToken();
 
-  let res = await fetch(`${API_URL}/jwt-user/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+    if (!token) return null;
 
-  if (res.status === 401) {
-    console.warn("🔁 Token scaduto, provo a rinnovarlo...");
-    const newToken = await refreshTokenIfNeeded();
-
-    if (!newToken) return null;
-
-    token = newToken;
-    res = await fetch(`${API_URL}/jwt-user/`, {
+    let res = await fetch(`${API_URL}/jwt-user/`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
     });
+
+    if (res.status === 401) {
+      console.warn("🔁 Token scaduto, provo a rinnovarlo...");
+      const newToken = await refreshTokenIfNeeded();
+
+      if (!newToken) return null;
+
+      token = newToken;
+      res = await fetch(`${API_URL}/jwt-user/`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    }
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    _currentUserCache = { value: data, expiresAt: Date.now() + CURRENT_USER_CACHE_TTL_MS };
+    return data;
+  })();
+
+  try {
+    return await _currentUserPromise;
+  } finally {
+    _currentUserPromise = null;
   }
-
-  if (!res.ok) return null;
-
-  return res.json();
 }
 
 // 🔄 Logout locale
@@ -190,6 +226,7 @@ export async function logout(): Promise<void> {
   // con un account diverso poteva ancora vedere per qualche secondo i dati
   // del vecchio account dalla cache, anche con i token già corretti.
   invalidateCache();
+  invalidateCurrentUserCache();
 }
 
 // 📝 Register
@@ -240,6 +277,7 @@ export const updateProfile = async (formData: FormData) => {
     console.error("updateProfile fallita:", res.status, data);
     return { ...data, ok: false, status: res.status };
   }
+  invalidateCurrentUserCache();
   return { ...data, ok: true, status: res.status };
 };
 

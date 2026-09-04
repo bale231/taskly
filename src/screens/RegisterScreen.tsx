@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -136,7 +137,11 @@ export default function RegisterScreen({ navigation }: Props) {
       >
         <View className="mb-6 w-full items-center">
           <Image
-            source={require("../../assets/logo-theme-dark.png")}
+            source={
+              Platform.OS === "android"
+                ? require("../../assets/android-logo-theme-dark.png")
+                : require("../../assets/logo-theme-dark.png")
+            }
             style={{ width: 270, height: 84, resizeMode: "contain" }}
           />
         </View>

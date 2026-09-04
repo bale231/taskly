@@ -44,6 +44,7 @@ import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
 import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
 import type { RootStackParamList } from "../navigation/types";
+import { getAnyAppCache, setAppCache } from "../services/storage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
 
@@ -141,20 +142,36 @@ export default function ProfileScreen({ navigation }: Props) {
     ),
   }));
 
-  const loadUser = async () => {
+  const applyUser = (data: ProfileUser) => {
+    setUser(data);
+    setUsername(data.username);
+    setEmail(data.email);
+    setAvatarUri(data.profile_picture);
+    setPushEnabled(data.push_notifications_enabled ?? true);
+  };
+
+  const loadUser = async (hadCache: boolean) => {
     const data = await getCurrentUserJWT();
     if (data) {
-      setUser(data);
-      setUsername(data.username);
-      setEmail(data.email);
-      setAvatarUri(data.profile_picture);
-      setPushEnabled(data.push_notifications_enabled ?? true);
+      applyUser(data);
+      await setAppCache("profile", data, data.username ?? data.email ?? "unknown");
     }
-    setLoading(false);
+    if (!hadCache) setLoading(false);
   };
 
   useEffect(() => {
-    loadUser();
+    const init = async () => {
+      // Profilo già scaricato dal prefetch globale (login/avvio app):
+      // mostrato subito, poi un fetch silenzioso in background lo aggiorna.
+      const cached = await getAnyAppCache<ProfileUser>("profile");
+      if (cached) {
+        applyUser(cached);
+        setLoading(false);
+      }
+      loadUser(!!cached);
+    };
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handlePickImage = async () => {

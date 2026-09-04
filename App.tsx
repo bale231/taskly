@@ -14,6 +14,7 @@ import { NetworkProvider } from "./src/context/NetworkContext";
 import { NotificationProvider } from "./src/context/NotificationContext";
 import { ThemeProvider } from "./src/context/ThemeContext";
 import RootNavigator from "./src/navigation/RootNavigator";
+import { prefetchAll } from "./src/services/prefetch";
 import { clearSessionTokensIfNeeded } from "./src/services/storage";
 
 export default function App() {
@@ -25,8 +26,20 @@ export default function App() {
       // non persistente, poi si tenta il refresh proattivo su ciò che resta.
       // Il delay minimo evita che lo splash animato lampeggi per una
       // frazione di secondo quando il bootstrap è già istantaneo.
+      //
+      // Se l'utente risulta già loggato (token persistiti da "Rimani
+      // loggato"), il prefetch di TUTTI i dati (liste+todo, categorie,
+      // amici, richieste, notifiche, profilo) avviene qui, prima di
+      // mostrare l'app: così la Home e ogni altra schermata partono già
+      // con i dati pronti in cache, senza fetch on-demand né skeleton
+      // durante la navigazione. Se il prefetch fallisce (offline, backend
+      // giù), non blocca l'avvio: le schermate ricadranno sulla cache
+      // salvata in una sessione precedente o sulla propria fetch normale.
       await Promise.all([
-        clearSessionTokensIfNeeded().then(() => proactiveTokenRefresh()),
+        clearSessionTokensIfNeeded()
+          .then(() => proactiveTokenRefresh())
+          .then(() => prefetchAll())
+          .catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, 800)),
       ]);
       setBootstrapped(true);
