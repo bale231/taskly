@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedPressable from "./AnimatedPressable";
 import GlassSurface from "./GlassSurface";
 import { useTheme } from "../context/ThemeContext";
+import { useTourTarget } from "../hooks/useTourTarget";
 import type { ListSortOption } from "../types/todo";
 
 interface BottomNavProps {
@@ -63,6 +64,7 @@ export default function BottomNav({
   const isDark = theme === "dark";
   const isHome = route.name === "Home";
   const isProfile = route.name === "Profile";
+  const editModeTarget = useTourTarget("list-edit-mode-button");
 
   return (
     <View className="absolute bottom-0 left-0 right-0 z-50">
@@ -148,28 +150,30 @@ export default function BottomNav({
         )}
 
         {showEdit && onToggleEdit && (
-          <AnimatedPressable
-            active={editMode}
-            glass
-            onPress={onToggleEdit}
-            className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
-            accessibilityLabel={editTitle}
-            activeBackgroundColor="#16A34A"
-            pillStyle={{ borderRadius: 16, padding: 8 }}
-            icon={
-              <Pencil
-                size={28}
-                strokeWidth={editMode ? 2.5 : 2}
-                color={editMode ? "#FFFFFF" : "#6B7280"}
-              />
-            }
-          >
-            <Text
-              className={`text-xs font-semibold ${editMode ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}
+          <View ref={editModeTarget.ref} onLayout={editModeTarget.onLayout} collapsable={false}>
+            <AnimatedPressable
+              active={editMode}
+              glass
+              onPress={onToggleEdit}
+              className="min-w-[64px] items-center gap-0.5 rounded-2xl android:rounded-xl py-1.5"
+              accessibilityLabel={editTitle}
+              activeBackgroundColor="#16A34A"
+              pillStyle={{ borderRadius: 16, padding: 8 }}
+              icon={
+                <Pencil
+                  size={28}
+                  strokeWidth={editMode ? 2.5 : 2}
+                  color={editMode ? "#FFFFFF" : "#6B7280"}
+                />
+              }
             >
-              Modifica
-            </Text>
-          </AnimatedPressable>
+              <Text
+                className={`text-xs font-semibold ${editMode ? "text-green-600 dark:text-green-400" : "text-gray-500 dark:text-gray-400"}`}
+              >
+                Modifica
+              </Text>
+            </AnimatedPressable>
+          </View>
         )}
 
         {showSort && onCycleSortOption && (

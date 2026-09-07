@@ -35,6 +35,8 @@ import Animated, {
   FadeOutUp,
   useAnimatedScrollHandler,
   useSharedValue,
+  ZoomIn,
+  ZoomOut,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -62,11 +64,16 @@ import { GlassBottomSheetBackdrop, GlassBottomSheetBackground } from "../compone
 import HighlightText from "../components/HighlightText";
 import ListCardSkeleton from "../components/ListCardSkeleton";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
+import ParticleBurst, { type ParticleBurstRef } from "../components/ParticleBurst";
 import ShareListModal from "../components/ShareListModal";
+import SupportWidget from "../components/SupportWidget";
 import SwipeableRow from "../components/SwipeableRow";
+import TourTargetView from "../components/TourTargetView";
 import WiggleView from "../components/WiggleView";
 import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
+import { useTour } from "../context/TourContext";
+import { useTourTarget } from "../hooks/useTourTarget";
 import type { RootStackParamList } from "../navigation/types";
 import { playCreateFeedback, playDeleteFeedback } from "../services/feedback";
 import {
@@ -136,6 +143,7 @@ export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const categoryPickerRef = useRef<BottomSheetModal>(null);
   const scrollViewRef = useRef<Animated.ScrollView>(null);
+  const particleBurstRef = useRef<ParticleBurstRef>(null);
   const scrollY = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((event) => {
     scrollY.value = event.contentOffset.y;
@@ -184,6 +192,8 @@ export default function HomeScreen({ navigation }: Props) {
   // non è mai un numero a caso di placeholder scollegato dal contenuto reale.
   const [skeletonCount, setSkeletonCount] = useState(3);
   const { showAlert } = useAlert();
+  const { startTour, nextStep } = useTour();
+  const categoryPickerTarget = useTourTarget("category-picker-button");
 
   // Modale lista
   const [showForm, setShowForm] = useState(false);
@@ -382,9 +392,34 @@ export default function HomeScreen({ navigation }: Props) {
       } else {
         const created = await createList(newListName, newListColor, newListCategory);
         if (created?.id) {
-          setLists((prev) => [...prev, created as TodoList]);
+          // Come nel ramo di modifica sopra: il backend restituisce
+          // `category` come solo ID (o comunque non affidabile), non come
+          // oggetto con `.id`/`.name` — senza questa sostituzione il filtro
+          // per categoria (categoryFilteredLists, confronta
+          // `l.category?.id`) non trovava match e la lista appena creata
+          // spariva dalla vista finché non si cambiava categoria e si
+          // tornava indietro (il refetch successivo la sistemava).
+          //
+          // `todos: created.todos ?? []`: la risposta di creazione non porta
+          // sempre l'array todos (una lista appena creata non ne ha) — senza
+          // questa guardia, ogni `.filter`/`.length` su `list.todos` sparso
+          // nella UI (conteggio pending/completate, ordinamento) crashava
+          // l'app al primo render della nuova lista.
+          const newList: TodoList = {
+            ...(created as TodoList),
+            todos: (created as TodoList).todos ?? [],
+            category: newListCategory ? categories.find((c) => c.id === newListCategory) || null : null,
+          };
+          setLists((prev) => [...prev, newList]);
           showAlert("success", "Lista creata con successo!");
           playCreateFeedback();
+          const { width, height } = Dimensions.get("window");
+          particleBurstRef.current?.trigger(width / 2, height / 2, "#3B82F6");
+          // Guida contestuale: parte solo alla prima lista mai creata (il
+          // context la ignora silenziosamente se già completata/saltata).
+          // Il ritardo lascia che il modale di creazione si chiuda e la
+          // nuova card compaia prima di evidenziarla.
+          setTimeout(() => startTour("listCard"), 500);
         } else {
           showAlert("error", "Impossibile creare la lista. Riprova.");
           return;
@@ -415,6 +450,8 @@ export default function HomeScreen({ navigation }: Props) {
     setLists((prev) => prev.filter((list) => list.id !== id));
     showAlert("success", "Lista eliminata");
     playDeleteFeedback();
+    const { width, height } = Dimensions.get("window");
+    particleBurstRef.current?.trigger(width / 2, height / 2, "#DC2626");
     try {
       await deleteList(id);
     } catch (err) {
@@ -457,6 +494,7 @@ export default function HomeScreen({ navigation }: Props) {
         if (created?.id) {
           setCategories((prev) => [...prev, created as Category]);
           showAlert("success", "Categoria creata!");
+          setTimeout(() => startTour("categories"), 500);
         } else {
           showAlert("error", "Impossibile creare la categoria. Riprova.");
           return;
@@ -700,6 +738,9 @@ export default function HomeScreen({ navigation }: Props) {
         {/* Selettore categoria */}
         <View className="mb-6 flex-row gap-2">
           <Pressable
+            ref={categoryPickerTarget.ref}
+            onLayout={categoryPickerTarget.onLayout}
+            collapsable={false}
             onPress={() => categoryPickerRef.current?.present()}
             className="flex-1 flex-row items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-3 dark:border-gray-700 dark:bg-gray-800"
           >
@@ -777,6 +818,12 @@ export default function HomeScreen({ navigation }: Props) {
                 {group.lists.map((list) => {
                   const completed = list.todos.filter((t) => t.completed).length;
                   const pending = list.todos.length - completed;
+                  // Guida contestuale "listCard": i suoi target (condividi/
+                  // elimina in edit mode) vanno registrati solo sulla card
+                  // della lista appena creata, non su tutte — altrimenti
+                  // l'overlay evidenzierebbe la prima card del gruppo invece
+                  // di quella che l'utente ha appena visto comparire.
+                  const isMostRecentList = lists.length > 0 && list.id === lists[lists.length - 1].id;
 
                   // Se la ricerca ha portato questa lista in vista per un
                   // match su un suo todo (non sul nome lista), mostra quel
@@ -794,7 +841,23 @@ export default function HomeScreen({ navigation }: Props) {
                     // ha overflow-hidden per contenere lo swipe orizzontale,
                     // e tagliava gli angoli della card durante la rotazione
                     // del tremolio (che li fa sporgere di qualche px).
-                    <WiggleView key={list.id} enabled={editMode && list.is_owner !== false}>
+                    // Solo iOS: su Android il tremolio "jiggle" stile iOS
+                    // risultava fuori posto/fastidioso — l'animazione di
+                    // comparsa delle icone (ZoomIn/ZoomOut sotto) basta da
+                    // sola a comunicare l'ingresso in modalità modifica.
+                    //
+                    // NIENT'entering/exiting qui: le card sono raggruppate
+                    // per categoria (groupedLists) e la key di ogni gruppo
+                    // può cambiare a runtime — un entering/exiting per
+                    // singola card, sommato al FadeIn del ListsContainer
+                    // esterno che avvolge l'intero elenco, causava card che
+                    // restavano bloccate a metà transizione (invisibili ma
+                    // ancora presenti nel layout, spazi vuoti enormi tra le
+                    // card visibili).
+                    <WiggleView
+                      key={list.id}
+                      enabled={Platform.OS === "ios" && editMode && list.is_owner !== false}
+                    >
                       <SwipeableRow
                         disabled={editMode}
                         leftAction={{
@@ -875,8 +938,8 @@ export default function HomeScreen({ navigation }: Props) {
 
                             {editMode && list.is_owner !== false && (
                               <Animated.View
-                                entering={FadeIn.duration(180)}
-                                exiting={FadeOut.duration(140)}
+                                entering={ZoomIn.duration(180)}
+                                exiting={ZoomOut.duration(140)}
                                 className="mt-3 flex-row gap-2 self-end"
                               >
                                 {/* Solo Condividi ed Elimina: Modifica e
@@ -884,18 +947,22 @@ export default function HomeScreen({ navigation }: Props) {
                                     lo swipe disabilitato in edit mode (sotto)
                                     restano comunque raggiungibili uscendo
                                     dalla modalità modifica. */}
-                                <Pressable
-                                  onPress={() => setShareListTarget(list)}
-                                  className="rounded-lg bg-purple-100/80 p-2 dark:bg-purple-900/60"
-                                >
-                                  <Share2 size={16} color="#7C3AED" />
-                                </Pressable>
-                                <Pressable
-                                  onPress={() => setShowDeleteConfirmId(list.id)}
-                                  className="rounded-lg bg-red-100 p-2 dark:bg-red-900/60"
-                                >
-                                  <Trash size={16} color="#DC2626" />
-                                </Pressable>
+                                <TourTargetView targetId="list-share-button" enabled={isMostRecentList}>
+                                  <Pressable
+                                    onPress={() => setShareListTarget(list)}
+                                    className="rounded-lg bg-purple-100/80 p-2 dark:bg-purple-900/60"
+                                  >
+                                    <Share2 size={16} color="#7C3AED" />
+                                  </Pressable>
+                                </TourTargetView>
+                                <TourTargetView targetId="list-delete-button" enabled={isMostRecentList}>
+                                  <Pressable
+                                    onPress={() => setShowDeleteConfirmId(list.id)}
+                                    className="rounded-lg bg-red-100 p-2 dark:bg-red-900/60"
+                                  >
+                                    <Trash size={16} color="#DC2626" />
+                                  </Pressable>
+                                </TourTargetView>
                               </Animated.View>
                             )}
                           </View>
@@ -925,6 +992,12 @@ export default function HomeScreen({ navigation }: Props) {
           const next = !editMode;
           setEditMode(next);
           showAlert(next ? "warning" : "success", next ? "Modalità modifica attivata" : "Modalità modifica disattivata");
+          // Guida contestuale: se il tour "listCard" è fermo sullo step del
+          // bottone modifica, l'averlo appena toccato è il segnale per
+          // avanzare allo step successivo (condividi/elimina sulla card),
+          // che però compare solo dopo che editMode è true — il ritardo
+          // lascia comparire quelle icone (FadeIn) prima di evidenziarle.
+          if (next) setTimeout(() => nextStep(), 350);
         }}
         onCycleSortOption={() => {
           const options: ListSortOption[] = ["created", "alphabetical", "complete"];
@@ -1185,6 +1258,9 @@ export default function HomeScreen({ navigation }: Props) {
         listId={shareListTarget?.id ?? 0}
         listName={shareListTarget?.name ?? ""}
       />
+
+      <ParticleBurst ref={particleBurstRef} />
+      <SupportWidget />
     </View>
   );
 }

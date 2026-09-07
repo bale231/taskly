@@ -51,6 +51,8 @@ import SwipeableRow from "../components/SwipeableRow";
 import TodoRowSkeleton from "../components/TodoRowSkeleton";
 import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
+import { useTour } from "../context/TourContext";
+import { useTourTarget } from "../hooks/useTourTarget";
 import type { RootStackParamList } from "../navigation/types";
 import {
   enqueueCreateTodo,
@@ -265,6 +267,9 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const { showAlert } = useAlert();
+  const { startTour } = useTour();
+  const todoInputTarget = useTourTarget("todo-input-field");
+  const todoAddTarget = useTourTarget("todo-add-button");
 
   // Lazy initializer: letto UNA volta, in modo sincrono, dallo specchio in
   // memoria della cache (popolato dal prefetch all'avvio/login o da una
@@ -446,6 +451,17 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchTodos, loadAllLists, listId]);
 
+  // Guida contestuale "todoCreate": parte quando l'utente apre una lista
+  // ancora vuota, il momento naturale per spiegare come aggiungere il primo
+  // todo (il context la ignora silenziosamente se già completata/saltata in
+  // passato). Il ritardo lascia che lo skeleton/caricamento si assesti.
+  useEffect(() => {
+    if (isLoading || todos.length > 0) return;
+    const timer = setTimeout(() => startTour("todoCreate"), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, todos.length]);
+
   // Un todo creato offline vive con un ID temporaneo (negativo) finché la
   // sua `create` in coda non viene confermata dal server: quando succede,
   // syncQueue notifica qui il nuovo ID reale, altrimenti la UI (e ogni
@@ -481,6 +497,11 @@ export default function ListDetailScreen({ route, navigation }: Props) {
 
   const handleDelete = (todoId: number) => {
     playDeleteFeedback();
+    // L'eliminazione parte quasi sempre da uno swipe (nessun punto di tap
+    // preciso disponibile) o dal bottone edit-mode: le particelle esplodono
+    // dal centro schermo invece che da una coordinata specifica del gesto.
+    const { width, height } = Dimensions.get("window");
+    particleBurstRef.current?.trigger(width / 2, height / 2, "#DC2626");
     setTodos((prev) => {
       const updated = prev.filter((t) => t.id !== todoId);
       updateListTodosCacheTodos(listId, updated);
@@ -489,7 +510,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     enqueueDeleteTodo(todoId).then(processQueue);
   };
 
-  const handleCreateTodo = async () => {
+  const handleCreateTodo = async (event?: GestureResponderEvent) => {
     if (!title.trim()) {
       showAlert("warning", "Inserisci il nome della task.");
       return;
@@ -530,6 +551,10 @@ export default function ListDetailScreen({ route, navigation }: Props) {
 
     enqueueCreateTodo({ tempId, listId, title, quantity: qty, unit, description }).then(processQueue);
     playCreateFeedback();
+    if (event) {
+      const { pageX, pageY } = event.nativeEvent;
+      particleBurstRef.current?.trigger(pageX, pageY, "#3B82F6");
+    }
 
     setTitle("");
     setQuantityValue("");
@@ -699,14 +724,19 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       )}
 
       <View className="mb-4 flex-row items-center gap-2">
-        <TextInput
-          value={title}
-          onChangeText={setTitle}
-          placeholder="Nuova ToDo..."
-          onSubmitEditing={() => setShowQuantityModal(true)}
-          className="flex-1 rounded-xl border border-gray-200/50 bg-white/60 px-4 py-3 text-gray-900 dark:border-white/20 dark:bg-gray-800/60 dark:text-white"
-        />
+        <View ref={todoInputTarget.ref} onLayout={todoInputTarget.onLayout} collapsable={false} style={{ flex: 1 }}>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Nuova ToDo..."
+            onSubmitEditing={() => setShowQuantityModal(true)}
+            className="rounded-xl border border-gray-200/50 bg-white/60 px-4 py-3 text-gray-900 dark:border-white/20 dark:bg-gray-800/60 dark:text-white"
+          />
+        </View>
         <Pressable
+          ref={todoAddTarget.ref}
+          onLayout={todoAddTarget.onLayout}
+          collapsable={false}
           onPress={() => setShowQuantityModal(true)}
           className="overflow-hidden rounded-xl"
         >

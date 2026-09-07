@@ -7,12 +7,14 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  type AnimatedProps,
 } from "react-native-reanimated";
 
-type WiggleViewProps = ViewProps & {
-  enabled: boolean;
-  children: React.ReactNode;
-};
+type WiggleViewProps = ViewProps &
+  Pick<AnimatedProps<ViewProps>, "entering" | "exiting"> & {
+    enabled: boolean;
+    children: React.ReactNode;
+  };
 
 /**
  * Piccola oscillazione continua stile "jiggle" delle icone della home di

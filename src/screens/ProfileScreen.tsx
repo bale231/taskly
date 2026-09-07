@@ -4,6 +4,7 @@ import {
   Bell,
   BellOff,
   Globe,
+  HelpCircle,
   Key,
   LogOut,
   Pencil,
@@ -43,6 +44,7 @@ import GlassSurface from "../components/GlassSurface";
 import Navbar, { NAVBAR_BASE_HEIGHT } from "../components/Navbar";
 import { useAlert } from "../context/AlertContext";
 import { useTheme } from "../context/ThemeContext";
+import { useTour } from "../context/TourContext";
 import type { RootStackParamList } from "../navigation/types";
 import { getAnyAppCache, setAppCache } from "../services/storage";
 
@@ -94,6 +96,7 @@ export default function ProfileScreen({ navigation }: Props) {
   const isDark = theme === "dark";
   const insets = useSafeAreaInsets();
   const { showAlert } = useAlert();
+  const { resetAllTours } = useTour();
   const [user, setUser] = useState<ProfileUser | null>(null);
   const [loading, setLoading] = useState(true);
   const scrollY = useSharedValue(0);
@@ -481,6 +484,17 @@ export default function ProfileScreen({ navigation }: Props) {
             <Animated.Text style={[{ fontWeight: "500" }, saveTextStyle]}>
               Salva modifiche
             </Animated.Text>
+          </Pressable>
+
+          <Pressable
+            onPress={async () => {
+              await resetAllTours();
+              showAlert("success", "Tutorial azzerato: riapparirà alla prossima interazione utile.");
+            }}
+            className="mb-3 flex-row items-center justify-center gap-2 rounded-lg bg-blue-500/20 py-3 dark:bg-blue-600/20"
+          >
+            <HelpCircle size={18} color="#2563EB" />
+            <Text className="font-medium text-blue-600 dark:text-blue-400">Azzera tutorial</Text>
           </Pressable>
 
           <Pressable

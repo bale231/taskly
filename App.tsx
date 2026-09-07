@@ -9,10 +9,12 @@ import { proactiveTokenRefresh } from "./src/api/auth";
 import AnimatedAlert from "./src/components/AnimatedAlert";
 import AnimatedSplashScreen from "./src/components/AnimatedSplashScreen";
 import NotificationPopup from "./src/components/NotificationPopup";
+import TourOverlay from "./src/components/TourOverlay";
 import { AlertProvider, useAlert } from "./src/context/AlertContext";
 import { NetworkProvider } from "./src/context/NetworkContext";
 import { NotificationProvider } from "./src/context/NotificationContext";
 import { ThemeProvider } from "./src/context/ThemeContext";
+import { TourProvider } from "./src/context/TourContext";
 import RootNavigator from "./src/navigation/RootNavigator";
 import { prefetchAll } from "./src/services/prefetch";
 import { clearSessionTokensIfNeeded } from "./src/services/storage";
@@ -59,12 +61,15 @@ export default function App() {
           <ThemeProvider>
             <NotificationProvider>
               <AlertProvider>
-                <BottomSheetModalProvider>
-                  <StatusBar style="auto" />
-                  <RootNavigator />
-                  <NotificationPopup />
-                  <GlobalAlert />
-                </BottomSheetModalProvider>
+                <TourProvider>
+                  <BottomSheetModalProvider>
+                    <StatusBar style="auto" />
+                    <RootNavigator />
+                    <NotificationPopup />
+                    <GlobalAlert />
+                    <TourOverlay />
+                  </BottomSheetModalProvider>
+                </TourProvider>
               </AlertProvider>
             </NotificationProvider>
           </ThemeProvider>
