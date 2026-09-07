@@ -50,14 +50,16 @@ export default function MarqueeText({
   const canScroll = overflow > 4;
 
   const onContainerLayout = (e: LayoutChangeEvent) => setContainerWidth(e.nativeEvent.layout.width);
-  // `onTextLayout` (non `onLayout`): riporta la larghezza di ogni riga di
-  // testo calcolata durante lo shaping del testo stesso, PRIMA che il
-  // layout box la vincoli/clippi — è l'equivalente RN dello `scrollWidth`
-  // del DOM usato dalla webapp. `onLayout` invece riporta sempre le
-  // dimensioni finali del box dopo la risoluzione dei vincoli flex del
-  // genitore, che coincidevano sempre con containerWidth (bug di oggi).
+  // Il <Text> di misura è forzato a `width: 9999` (mai vincolato dal
+  // contenitore reale): senza questo, anche senza `numberOfLines` il testo
+  // veniva comunque wrappato su più righe ereditando un vincolo di
+  // larghezza dal layout circostante, e `lines[0].width` misurava solo la
+  // prima riga (più STRETTA del container, mai più larga — il bug di oggi:
+  // canScroll risultava sempre falso perché il confronto avveniva contro un
+  // frammento del testo, non l'intera stringa). Con `width: 9999` il testo
+  // sta sempre su un'unica riga e la sua larghezza è quella reale.
   const onTextLayout = (e: NativeSyntheticEvent<TextLayoutEventData>) => {
-    const width = e.nativeEvent.lines[0]?.width ?? 0;
+    const width = e.nativeEvent.lines.reduce((sum, line) => sum + line.width, 0);
     setTextWidth(width);
   };
 
@@ -90,22 +92,31 @@ export default function MarqueeText({
       <View onLayout={onContainerLayout} style={{ flex: 1, overflow: "hidden" }}>
         {/* Misura sempre la stringa piatta, mai il markup con l'highlight
             annidato sotto (un <Text> figlio con l'highlight rompe la misura
-            allo stesso modo). `onTextLayout` invece di `onLayout`: riporta
-            la larghezza di ogni riga calcolata durante lo shaping del testo
-            stesso, PRIMA che il layout box la vincoli al contenitore — è
-            l'equivalente RN dello `scrollWidth` del DOM che la webapp usava
-            per lo stesso identico effetto. `onLayout` riportava sempre le
-            dimensioni finali del box già vincolato dal `flex: 1` del
-            genitore, che coincidevano sempre con containerWidth qualunque
-            wrapper si provasse (il vero bug di oggi, ci sono volute diverse
-            iterazioni per isolarlo). */}
-        <View style={{ position: "absolute", opacity: 0 }} pointerEvents="none">
+            allo stesso modo). `width: 9999` forza un'unica riga: senza un
+            vincolo esplicito il testo veniva comunque wrappato su più righe
+            (ereditando la larghezza del contenitore reale nonostante
+            `position: absolute`), e `onTextLayout` misurava solo la prima
+            riga — più stretta del container, mai più larga: canScroll
+            risultava sempre falso perché il confronto avveniva contro un
+            frammento del testo, non l'intera stringa (il vero bug). */}
+        <View style={{ position: "absolute", opacity: 0, width: 9999 }} pointerEvents="none">
           <Text className={className} style={style} onTextLayout={onTextLayout}>
             {children}
           </Text>
         </View>
         <Animated.View style={animatedStyle}>
-          <Text className={className} style={[style, { alignSelf: "flex-start" }]} numberOfLines={1}>
+          {/* Niente `numberOfLines`: come nella webapp (overflow-hidden sul
+              contenitore + whitespace-nowrap sul testo, senza troncamento a
+              "…"), qui il testo resta su una riga sola (`width: textWidth`,
+              nota una volta misurata) e il View genitore con
+              `overflow: hidden` nasconde la parte eccedente — senza questo,
+              anche scorrendo con translateX il testo veniva comunque
+              troncato con l'ellissi perché numberOfLines lo considerava
+              sempre più largo del contenitore dichiarato. */}
+          <Text
+            className={className}
+            style={[style, { alignSelf: "flex-start" }, textWidth > 0 ? { width: textWidth } : null]}
+          >
             {renderHighlighted(children, highlight, highlightClassName)}
           </Text>
         </Animated.View>
