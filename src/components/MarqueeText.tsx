@@ -28,6 +28,22 @@ interface MarqueeTextProps {
    * al layout/onTextLayout per calcolare l'overflow dello scroll. */
   highlight?: string;
   highlightClassName?: string;
+  /**
+   * Quando false, il componente si riduce a un semplice <Text> troncato:
+   * niente <Text> nascosto di misura, niente onLayout/onTextLayout (quindi
+   * nessun setState per riga), niente shared value/worklet Reanimated,
+   * niente GestureDetector o Pressable.
+   *
+   * Serve nelle liste lunghe: il costo del marquee è per-riga e si paga
+   * anche sulle righe il cui titolo non ecceda affatto (la maggioranza),
+   * perché per scoprirlo bisogna comunque misurare. Su 100+ todo montate
+   * significa 100 handler nativi da arbitrare a ogni gesto e 200 setState
+   * a cascata durante lo scroll — la causa del lag e dei glitch di
+   * virtualizzazione. Le prime righe restano interattive (vedi
+   * MARQUEE_ROW_LIMIT in ListDetailScreen), che è dove l'utente
+   * effettivamente tocca i titoli.
+   */
+  interactive?: boolean;
 }
 
 /**
@@ -42,13 +58,16 @@ export default function MarqueeText({
   style,
   highlight,
   highlightClassName = "bg-yellow-200 text-gray-900 dark:bg-yellow-500/40 dark:text-white",
+  interactive = true,
 }: MarqueeTextProps) {
   const [containerWidth, setContainerWidth] = useState(0);
   const [textWidth, setTextWidth] = useState(0);
   const translateX = useSharedValue(0);
 
   const overflow = textWidth - containerWidth;
-  const canScroll = overflow > 4;
+  // In modalità non interattiva non si misura nulla, quindi non c'è niente
+  // da far scorrere: il testo viene semplicemente troncato.
+  const canScroll = interactive && overflow > 4;
 
   const onContainerLayout = (e: LayoutChangeEvent) => setContainerWidth(e.nativeEvent.layout.width);
   // Il <Text> di misura è forzato a `width: 9999` (mai vincolato dal
@@ -94,6 +113,21 @@ export default function MarqueeText({
     "worklet";
     runOnJS(handlePress)();
   });
+
+  // Versione statica: un solo <Text> troncato, nessun handler né misura.
+  // Tutti gli hook sopra restano chiamati (le regole degli hook non
+  // ammettono uscite anticipate prima di loro), ma il loro costo è
+  // trascurabile: quello che pesa davvero è ciò che NON viene montato qui
+  // sotto — il <Text> ombra di misura, l'Animated.View e il detector.
+  if (!interactive) {
+    return (
+      <View style={{ flex: 1 }}>
+        <Text className={className} style={style} numberOfLines={1}>
+          {renderHighlighted(children, highlight, highlightClassName)}
+        </Text>
+      </View>
+    );
+  }
 
   const content = (
     <View onLayout={onContainerLayout} style={{ flex: 1, overflow: "hidden" }}>

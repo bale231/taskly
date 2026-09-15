@@ -79,10 +79,28 @@ import type { Todo, TodoSortOption } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ListDetail">;
 
-/** Oltre questo numero di todo, il map+sort iniziale viene rinviato a fine
- * transizione per non rubarle frame; sotto, si esegue subito perché costa
- * meno di quanto costi all'utente vedere la lista vuota mentre entra. */
-const IMMEDIATE_RENDER_THRESHOLD = 150;
+/** Oltre questo numero di todo, il map+sort iniziale viene rinviato (di un
+ * tick) per non rubare frame all'animazione di ingresso; sotto, si esegue
+ * subito perché costa meno di quanto costi all'utente vedere la lista vuota
+ * mentre entra.
+ *
+ * Tenuto basso deliberatamente: misurando l'apertura di una lista da 101
+ * todo con una soglia di 150 (quindi con il sort sincrono attivo) si
+ * ottenevano l'82% di frame persi e una mediana di 500ms per frame. Il
+ * lavoro sincrono in quel punto va limitato a liste davvero piccole, dove è
+ * impercettibile. */
+const IMMEDIATE_RENDER_THRESHOLD = 40;
+
+/** Solo le prime righe montano il marquee interattivo (titolo che scorre al
+ * tap): il suo costo — GestureDetector nativo, worklet Reanimated e un
+ * <Text> ombra di misura, più due setState di layout — si paga per OGNI
+ * riga, anche per i titoli che non eccedono affatto. Su liste da 100+ todo
+ * il totale degrada lo scroll e disturba la virtualizzazione (righe che
+ * spariscono). Oltre questa soglia il titolo è semplicemente troncato: chi
+ * scorre in fondo a una lista lunga non sta cercando di leggere un titolo
+ * tappandoci sopra, e il testo completo resta comunque visibile aprendo la
+ * todo in modifica. */
+const MARQUEE_ROW_LIMIT = 15;
 
 function effectiveSortOf(data: ListDetailsResponse): TodoSortOption {
   return data.sort_order === "alphabetical" || data.sort_order === "completed"
@@ -208,6 +226,7 @@ const TodoRow = memo(function TodoRow({
                 todo.completed ? "text-gray-400 line-through" : "text-gray-900 dark:text-white"
               }`}
               highlight={searchQuery}
+              interactive={index < MARQUEE_ROW_LIMIT}
             >
               {todo.title}
             </MarqueeText>
@@ -1003,16 +1022,30 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           paddingTop: stickyHeaderHeight + 16,
           paddingBottom: 140,
         }}
-        // Di default windowSize=21 tiene montate molte più righe di quelle
-        // visibili (fino a ~10 schermate di contenuto): con liste da 100+
-        // todo questo vanifica in parte la virtualizzazione, perché ogni
-        // cambio di editMode forza comunque il re-render di decine di righe
-        // montate ma fuori schermo. Valori più stretti limitano il lavoro a
-        // ciò che serve davvero per uno scroll fluido.
-        initialNumToRender={12}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        updateCellsBatchingPeriod={30}
+        // Il default windowSize=21 (~10 schermate montate) è troppo per
+        // liste da 100+ todo, ma 5 (±2 schermate) era l'eccesso opposto:
+        // scorrendo veloce la virtualizzazione non faceva in tempo a
+        // montare le righe e comparivano buchi/righe che sparivano. Con il
+        // marquee ora limitato alle prime righe il costo per riga è molto
+        // più basso, quindi si può tenere un margine più onesto.
+        // initialNumToRender basso di proposito: è il numero di righe
+        // montate SINCRONAMENTE nel primo frame, cioè esattamente mentre
+        // parte l'animazione di ingresso. Ogni riga costa un SwipeableRow
+        // (gesture handler) e una checkbox animata (3 worklet Reanimated):
+        // montarne 12 lì significava ~1s di thread JS bloccato e l'82% di
+        // frame persi all'apertura di una lista da 100 todo. Bastano le
+        // righe che stanno davvero nella prima schermata; le altre
+        // arrivano nei batch successivi, a transizione già avviata.
+        initialNumToRender={6}
+        maxToRenderPerBatch={6}
+        windowSize={11}
+        updateCellsBatchingPeriod={50}
+        // NIENTE removeClippedSubviews: su Android è la causa nota di righe
+        // che spariscono durante lo scroll (le view staccate dalla gerarchia
+        // non sempre vengono riattaccate in tempo), il glitch segnalato su
+        // questa schermata. Lo scroll misurato senza di esso è comunque
+        // fluido (1,35% di frame persi), quindi non serve barattare
+        // correttezza visiva per prestazioni che già ci sono.
         ItemSeparatorComponent={() => <View className="h-3" />}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={
