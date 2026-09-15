@@ -79,6 +79,28 @@ import type { Todo, TodoSortOption } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ListDetail">;
 
+/** Oltre questo numero di todo, il map+sort iniziale viene rinviato a fine
+ * transizione per non rubarle frame; sotto, si esegue subito perché costa
+ * meno di quanto costi all'utente vedere la lista vuota mentre entra. */
+const IMMEDIATE_RENDER_THRESHOLD = 150;
+
+function effectiveSortOf(data: ListDetailsResponse): TodoSortOption {
+  return data.sort_order === "alphabetical" || data.sort_order === "completed"
+    ? data.sort_order
+    : "created";
+}
+
+/** Normalizza i todo di una risposta/cache e li ordina secondo il sort
+ * salvato per quella lista. Pura: usabile sia dentro un lazy initializer di
+ * useState (primo render sincrono) sia da un effect. */
+function buildSortedTodos(data: ListDetailsResponse): Todo[] {
+  const todosWithIndex: Todo[] = data.todos.map((t: Todo, index: number) => ({
+    ...t,
+    _originalIndex: t._originalIndex ?? index,
+  }));
+  return sortTodos(todosWithIndex, effectiveSortOf(data));
+}
+
 const HEADER_BG: Record<string, string> = {
   blue: "bg-blue-50 dark:bg-blue-950",
   green: "bg-green-50 dark:bg-green-950",
@@ -333,29 +355,27 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   // stack) compaia per un frame lo skeleton in attesa della lettura async
   // di AsyncStorage — qui i dati sono già pronti al primissimo render.
   //
-  // `todos` va popolato SUBITO dal lazy initializer (gira una sola volta,
-  // sincrono, prima del primo render) altrimenti c'è una finestra reale in
-  // cui `isLoading` è già `false` (impostato sincronamente sotto) ma `todos`
-  // è ancora `[]` — la FlatList mostra il proprio stato "vuoto" invece dello
-  // skeleton, un vuoto totale visibile anche su liste piccole.
+  // Sotto soglia, il map+sort completo avviene qui, sincronamente: è
+  // l'unico modo perché le todo siano sullo schermo già al PRIMO frame,
+  // ordinate correttamente. Farlo sempre in un effect (che gira dopo il
+  // commit) lasciava la lista visibilmente vuota per qualche centinaio di
+  // ms anche quando i dati erano già in RAM.
   //
-  // MA il map+sort (`.map` con spread per _originalIndex + `.sort`) NON va
-  // fatto qui: il lazy initializer gira nel momento esatto in cui React
+  // Oltre soglia, il lazy initializer gira nel momento esatto in cui React
   // monta lo screen, che con native-stack coincide con l'inizio
-  // dell'animazione push nativa — bloccare il thread JS proprio lì (anche
-  // solo per un mapping di 100 elementi) si sente come uno scatto/ritardo
-  // al tap, non come un problema di scroll. È il bug esatto per cui era
-  // stato introdotto `InteractionManager.runAfterInteractions` in una
-  // sessione precedente, poi rimosso qui in una fix successiva che pensava
-  // (erroneamente) che il lazy initializer "girasse prima che React
-  // committi" e quindi non contasse — il costo lo si paga comunque sul
-  // thread JS, semplicemente in un momento diverso, e quel momento è il
-  // peggiore possibile. Qui i dati grezzi (senza sort) sono usati come primo
-  // render — evita il vuoto — mentre il sort vero viene applicato in un
-  // useEffect subito dopo (vedi sotto), che gira DOPO il commit e quindi
-  // dopo che l'animazione nativa è già partita.
+  // dell'animazione push nativa: un map+sort pesante lì si sente come uno
+  // scatto/ritardo al tap, non come un problema di scroll. In quel caso si
+  // usano i dati grezzi (senza sort) come primo render — evita comunque il
+  // vuoto totale — mentre il sort vero viene applicato in un useEffect
+  // subito dopo (vedi sotto), che gira DOPO il commit e quindi dopo che
+  // l'animazione nativa è già partita.
   const initialCache = getListTodosCacheSync<ListDetailsResponse>(listId);
-  const [todos, setTodos] = useState<Todo[]>(() => initialCache?.todos ?? []);
+  const [todos, setTodos] = useState<Todo[]>(() => {
+    if (!initialCache) return [];
+    return initialCache.todos.length <= IMMEDIATE_RENDER_THRESHOLD
+      ? buildSortedTodos(initialCache)
+      : initialCache.todos;
+  });
   const [listName, setListName] = useState(initialCache?.name ?? "");
   const [listColor, setListColor] = useState(initialCache?.color || "blue");
   const [isShared, setIsShared] = useState(initialCache?.is_shared || false);
@@ -439,17 +459,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         const data = await withNetworkPriority(() => fetchListDetails(listId));
         if (!data) return;
 
-        const todosWithIndex: Todo[] = data.todos.map((t: Todo, index: number) => ({
-          ...t,
-          _originalIndex: t._originalIndex ?? index,
-        }));
-
-        const effectiveSort: TodoSortOption =
-          data.sort_order === "alphabetical" || data.sort_order === "completed"
-            ? data.sort_order
-            : "created";
-
-        setSortOption(effectiveSort);
+        setSortOption(effectiveSortOf(data));
         // Il refetch silenzioso all'apertura di solito riporta esattamente
         // ciò che la cache mostrava già: rimpiazzare comunque l'array
         // significava dare a ogni riga un oggetto `todo` con riferimento
@@ -457,7 +467,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         // nulla fosse cambiato a schermo. Se i dati coincidono, si tiene lo
         // stato precedente e React non ha niente da fare.
         setTodos((prev) => {
-          const next = sortTodos(todosWithIndex, effectiveSort);
+          const next = buildSortedTodos(data);
           return sameTodos(prev, next) ? prev : next;
         });
         setListName(data.name);
@@ -478,6 +488,16 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     [listId, showAlert]
   );
 
+  /**
+   * Caricata SOLO all'apertura di una modale "Sposta", non al mount della
+   * schermata: serve unicamente a popolare l'elenco delle liste di
+   * destinazione, che la maggior parte delle aperture di una lista non usa
+   * mai. Farla partire al mount significava, su un backend a worker
+   * singolo, mettere una richiesta inutile davanti a quella dei todo che
+   * l'utente sta effettivamente aspettando. `fetchAllLists` è comunque
+   * deduplicata e cachata, quindi da qui è quasi sempre istantanea (la
+   * Home l'ha già richiesta).
+   */
   const loadAllLists = useCallback(async () => {
     try {
       const lists = await fetchAllLists();
@@ -488,41 +508,55 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     }
   }, [showAlert]);
 
+  const openMoveModal = useCallback(() => {
+    loadAllLists();
+    setShowMoveModal(true);
+  }, [loadAllLists]);
+
+  const openBulkMoveModal = useCallback(() => {
+    loadAllLists();
+    setShowBulkMoveModal(true);
+  }, [loadAllLists]);
+
   useEffect(() => {
-    const applyTodos = (cached: ListDetailsResponse) => {
-      const todosWithIndex: Todo[] = cached.todos.map((t: Todo, index: number) => ({
-        ...t,
-        _originalIndex: t._originalIndex ?? index,
-      }));
-      const effectiveSort: TodoSortOption =
-        cached.sort_order === "alphabetical" || cached.sort_order === "completed"
-          ? cached.sort_order
-          : "created";
-      setSortOption(effectiveSort);
-      setTodos((prev) => {
-        const next = sortTodos(todosWithIndex, effectiveSort);
-        return sameTodos(prev, next) ? prev : next;
-      });
+    /**
+     * `alreadyApplied` è true solo quando i dati arrivano dallo specchio
+     * sincrono in memoria: in quel caso il lazy initializer di `todos` li
+     * ha già ordinati e messi a schermo al primo frame (lista sotto
+     * soglia), e rifarlo qui sarebbe lavoro sprecato per un risultato
+     * identico. Quando invece la cache è stata letta in modo asincrono da
+     * AsyncStorage, o la lista è sopra soglia (il lazy initializer ha
+     * mostrato solo i dati grezzi, non ordinati), il sort vero va
+     * applicato qui.
+     *
+     * Il ritardo è un `setTimeout(0)`, non `InteractionManager.
+     * runAfterInteractions`: quest'ultimo aspetta la fine di TUTTE le
+     * interazioni native in coda, e con un prefetch globale ancora attivo
+     * in background il ritardo poteva allungarsi ben oltre un frame,
+     * dando l'impressione di un caricamento lento percepibile. Basta
+     * uscire dal frame di montaggio corrente (quello in cui parte
+     * l'animazione push nativa) per non rubargli lavoro.
+     */
+    const applyTodos = (cached: ListDetailsResponse, alreadyApplied: boolean) => {
+      if (alreadyApplied) return;
+      setTimeout(() => {
+        setSortOption(effectiveSortOf(cached));
+        setTodos((prev) => {
+          const next = buildSortedTodos(cached);
+          return sameTodos(prev, next) ? prev : next;
+        });
+      }, 0);
     };
 
     const load = async () => {
       if (initialCache) {
-        // Il primo render ha già mostrato `initialCache.todos` grezzi (senza
-        // map/_originalIndex/sort, vedi lazy initializer sopra) proprio per
-        // non bloccare il thread JS nel frame in cui parte l'animazione push
-        // nativa. Il sort vero è rimandato al prossimo tick: basta uscire dal
-        // frame di montaggio corrente, non serve (e non conviene) aspettare
-        // `InteractionManager.runAfterInteractions`, che attende la fine di
-        // TUTTE le interazioni native in coda — con un prefetch globale
-        // ancora attivo in background il ritardo poteva allungarsi ben oltre
-        // un frame, dando l'impressione di un caricamento lento percepibile.
-        setTimeout(() => applyTodos(initialCache), 0);
+        applyTodos(initialCache, initialCache.todos.length <= IMMEDIATE_RENDER_THRESHOLD);
         fetchTodos(true);
         return;
       }
       const cached = await getListTodosCache<ListDetailsResponse>(listId);
       if (cached) {
-        applyTodos(cached);
+        applyTodos(cached, false);
         setListName(cached.name);
         setListColor(cached.color || "blue");
         setIsShared(cached.is_shared || false);
@@ -531,9 +565,8 @@ export default function ListDetailScreen({ route, navigation }: Props) {
       fetchTodos(!!cached);
     };
     load();
-    loadAllLists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchTodos, loadAllLists, listId]);
+  }, [fetchTodos, listId]);
 
   // Guida contestuale "todoCreate": parte quando l'utente apre una lista
   // ancora vuota, il momento naturale per spiegare come aggiungere il primo
@@ -614,10 +647,13 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     setSelectedIds((ids) => (ids.includes(todoId) ? ids.filter((i) => i !== todoId) : [...ids, todoId]));
   }, []);
 
-  const handleMoveRequest = useCallback((todo: Todo) => {
-    setTodoToMove(todo);
-    setShowMoveModal(true);
-  }, []);
+  const handleMoveRequest = useCallback(
+    (todo: Todo) => {
+      setTodoToMove(todo);
+      openMoveModal();
+    },
+    [openMoveModal]
+  );
 
   const handleCreateTodo = async (event?: GestureResponderEvent) => {
     if (!title.trim()) {
@@ -912,7 +948,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => setShowBulkMoveModal(true)}
+                onPress={openBulkMoveModal}
                 className="flex-row items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2"
               >
                 <ArrowRightLeft size={16} color="#FFFFFF" />

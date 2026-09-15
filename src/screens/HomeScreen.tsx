@@ -194,8 +194,22 @@ export default function HomeScreen({ navigation }: Props) {
   // non è mai un numero a caso di placeholder scollegato dal contenuto reale.
   const [skeletonCount, setSkeletonCount] = useState(3);
   const { showAlert } = useAlert();
-  const { startTour, nextStep } = useTour();
+  const { startTour, nextStep, rehydrated: toursRehydrated } = useTour();
   const categoryPickerTarget = useTourTarget("category-picker-button");
+
+  // Tour di benvenuto al primo focus utile: aspetta che TourProvider abbia
+  // finito di leggere lo stato persistito (rehydrated) invece di un
+  // setTimeout a tempo fisso dentro useFocusEffect, la cui closure su
+  // startTour resta congelata al primo focus — se a quel punto la
+  // rehydration non era ancora pronta, startTour restava per sempre quello
+  // "vecchio" che si rifiuta di partire, e il tour non compariva più.
+  const welcomeTourAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!toursRehydrated || welcomeTourAttemptedRef.current) return;
+    welcomeTourAttemptedRef.current = true;
+    const timer = setTimeout(() => startTour("welcome"), 600);
+    return () => clearTimeout(timer);
+  }, [toursRehydrated, startTour]);
 
   // Modale lista
   const [showForm, setShowForm] = useState(false);
@@ -357,6 +371,7 @@ export default function HomeScreen({ navigation }: Props) {
         } catch (err) {
           console.warn("Impossibile caricare la categoria selezionata:", err);
         }
+
       };
       load();
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -674,73 +689,85 @@ export default function HomeScreen({ navigation }: Props) {
 
         {/* Azioni rapide: amici */}
         <View className="mb-4 flex-row gap-3">
-          <Pressable
-            onPress={() => navigation.navigate("FindUsers")}
-            accessibilityLabel="Trova Utenti"
-            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-blue-500"
-          >
-            <Users size={22} color="#FFFFFF" />
-          </Pressable>
+          <TourTargetView targetId="welcome-find-users" style={{ flex: 1 }}>
+            <Pressable
+              onPress={() => navigation.navigate("FindUsers")}
+              accessibilityLabel="Trova Utenti"
+              className="h-14 items-center justify-center rounded-2xl android:rounded-xl bg-blue-500"
+            >
+              <Users size={22} color="#FFFFFF" />
+            </Pressable>
+          </TourTargetView>
 
-          <Pressable
-            onPress={() => navigation.navigate("FriendRequests")}
-            accessibilityLabel="Richieste di Amicizia"
-            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-green-500"
-          >
-            <UserPlus size={22} color="#FFFFFF" />
-          </Pressable>
+          <TourTargetView targetId="welcome-friend-requests" style={{ flex: 1 }}>
+            <Pressable
+              onPress={() => navigation.navigate("FriendRequests")}
+              accessibilityLabel="Richieste di Amicizia"
+              className="h-14 items-center justify-center rounded-2xl android:rounded-xl bg-green-500"
+            >
+              <UserPlus size={22} color="#FFFFFF" />
+            </Pressable>
+          </TourTargetView>
 
-          <Pressable
-            onPress={() => navigation.navigate("Friends")}
-            accessibilityLabel="I Miei Amici"
-            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-purple-500"
-          >
-            <UserCheck size={22} color="#FFFFFF" />
-          </Pressable>
+          <TourTargetView targetId="welcome-friends" style={{ flex: 1 }}>
+            <Pressable
+              onPress={() => navigation.navigate("Friends")}
+              accessibilityLabel="I Miei Amici"
+              className="h-14 items-center justify-center rounded-2xl android:rounded-xl bg-purple-500"
+            >
+              <UserCheck size={22} color="#FFFFFF" />
+            </Pressable>
+          </TourTargetView>
         </View>
 
         {/* Azioni rapide: categoria, archivio, cerca */}
         <View className="mb-4 flex-row gap-3">
-          <Pressable
-            onPress={() => {
-              setShowCatForm(true);
-              setEditCatId(null);
-              setCatName("");
-            }}
-            accessibilityLabel="Nuova Categoria"
-            className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-yellow-500"
-          >
-            <Plus size={22} color="#FFFFFF" />
-          </Pressable>
+          <TourTargetView targetId="welcome-new-category" style={{ flex: 1 }}>
+            <Pressable
+              onPress={() => {
+                setShowCatForm(true);
+                setEditCatId(null);
+                setCatName("");
+              }}
+              accessibilityLabel="Nuova Categoria"
+              className="h-14 items-center justify-center rounded-2xl android:rounded-xl bg-yellow-500"
+            >
+              <Plus size={22} color="#FFFFFF" />
+            </Pressable>
+          </TourTargetView>
 
-          <AnimatedPressable
-            active={showArchived}
-            onPress={() => setShowArchived((prev) => !prev)}
-            accessibilityLabel={showArchived ? "Mostra attive" : "Mostra archivio"}
-            className={`flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl ${
-              showArchived ? "bg-orange-500" : "bg-gray-500"
-            }`}
-          >
-            {showArchived ? (
-              <ArchiveRestore size={22} color="#FFFFFF" />
-            ) : (
-              <Archive size={22} color="#FFFFFF" />
-            )}
-            {archivedCount > 0 && !showArchived && (
-              <View className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full bg-orange-600">
-                <Text className="text-xs text-white">{archivedCount}</Text>
-              </View>
-            )}
-          </AnimatedPressable>
+          <TourTargetView targetId="welcome-archive" style={{ flex: 1 }}>
+            <AnimatedPressable
+              active={showArchived}
+              onPress={() => setShowArchived((prev) => !prev)}
+              accessibilityLabel={showArchived ? "Mostra attive" : "Mostra archivio"}
+              className={`h-14 items-center justify-center rounded-2xl android:rounded-xl ${
+                showArchived ? "bg-orange-500" : "bg-gray-500"
+              }`}
+            >
+              {showArchived ? (
+                <ArchiveRestore size={22} color="#FFFFFF" />
+              ) : (
+                <Archive size={22} color="#FFFFFF" />
+              )}
+              {archivedCount > 0 && !showArchived && (
+                <View className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full bg-orange-600">
+                  <Text className="text-xs text-white">{archivedCount}</Text>
+                </View>
+              )}
+            </AnimatedPressable>
+          </TourTargetView>
 
           {!searchOpen && (
-            <Pressable
-              onPress={() => setSearchOpen(true)}
-              accessibilityLabel="Cerca"
-              className="flex-1 h-14 items-center justify-center rounded-2xl android:rounded-xl bg-gray-600"
-            >
-              <Search size={22} color="#FFFFFF" />
-            </Pressable>
+            <TourTargetView targetId="welcome-search" style={{ flex: 1 }}>
+              <Pressable
+                onPress={() => setSearchOpen(true)}
+                accessibilityLabel="Cerca"
+                className="h-14 items-center justify-center rounded-2xl android:rounded-xl bg-gray-600"
+              >
+                <Search size={22} color="#FFFFFF" />
+              </Pressable>
+            </TourTargetView>
           )}
         </View>
 

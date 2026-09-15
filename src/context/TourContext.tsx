@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { navigate } from "../navigation/navigationRef";
 import { TOURS, type TourId } from "../tours/definitions";
 
 const STORAGE_KEY = "tours:completed";
@@ -23,17 +24,26 @@ export interface TargetRect {
 }
 
 interface TourContextType {
+  /** True solo dopo aver letto lo stato persistito dei tour completati:
+   * prima di questo, startTour() rifiuta ogni chiamata (per non far partire
+   * un tour già completato in una sessione precedente). Un chiamante che
+   * ha bisogno di ritentare startTour() non appena diventa possibile
+   * (es. al mount di una schermata, prima che la rehydration sia pronta)
+   * deve osservare questo flag invece di un setTimeout a tempo fisso. */
+  rehydrated: boolean;
   /** Tour correntemente in corso, o null se nessuno. */
   activeTourId: TourId | null;
   /** Indice dello step corrente all'interno del tour attivo. */
   activeStepIndex: number;
   /** Rettangolo del target dello step corrente, riportato da useTourTarget(). */
   activeRect: TargetRect | null;
-  /** Il target dello step corrente, per sapere quale targetId aspettarsi. */
+  /** Il target dello step corrente, per sapere quale targetId aspettarsi.
+   * null anche per uno step "intro" senza targetId. */
   activeTargetId: string | null;
   /** Avvia un tour, solo se non è già stato completato/saltato in passato. */
   startTour: (id: TourId) => void;
-  /** Passa allo step successivo, o chiude il tour se era l'ultimo. */
+  /** Passa allo step successivo, o chiude il tour se era l'ultimo. Se lo
+   * step successivo richiede una navigazione, la esegue prima di mostrarlo. */
   nextStep: () => void;
   /** Salta l'intero tour corrente, marcandolo come completato. */
   skipTour: () => void;
@@ -94,6 +104,10 @@ export function TourProvider({ children }: { children: ReactNode }) {
       if (!rehydrated) return;
       if (completedTours.has(id)) return;
       if (activeTourId != null) return; // Un tour alla volta.
+      const firstStep = TOURS[id].steps[0];
+      if (firstStep?.navigateTo) {
+        navigate(firstStep.navigateTo.screen, firstStep.navigateTo.params as never);
+      }
       setActiveTourId(id);
       setActiveStepIndex(0);
       setActiveRect(null);
@@ -111,12 +125,17 @@ export function TourProvider({ children }: { children: ReactNode }) {
   const nextStep = useCallback(() => {
     if (!activeTourId) return;
     const steps = TOURS[activeTourId].steps;
-    if (activeStepIndex + 1 >= steps.length) {
+    const nextIndex = activeStepIndex + 1;
+    if (nextIndex >= steps.length) {
       finishTour(activeTourId);
-    } else {
-      setActiveStepIndex((i) => i + 1);
-      setActiveRect(null);
+      return;
     }
+    const step = steps[nextIndex];
+    if (step.navigateTo) {
+      navigate(step.navigateTo.screen, step.navigateTo.params as never);
+    }
+    setActiveStepIndex(nextIndex);
+    setActiveRect(null);
   }, [activeTourId, activeStepIndex, finishTour]);
 
   const skipTour = useCallback(() => {
@@ -143,6 +162,7 @@ export function TourProvider({ children }: { children: ReactNode }) {
   return (
     <TourContext.Provider
       value={{
+        rehydrated,
         activeTourId,
         activeStepIndex,
         activeRect,

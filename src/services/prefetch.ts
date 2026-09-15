@@ -72,7 +72,13 @@ export async function prefetchAll(): Promise<void> {
     () => fetchNotifications().then((data) => setAppCache("notifications", data, username)),
   ];
 
-  await runWithLimit([...otherTasks, ...listDetailsTasks], PREFETCH_CONCURRENCY);
+  // I dettagli delle liste (= le todo) PRIMA di tutto il resto: sono ciò
+  // che l'utente aprirà per primo, mentre amici/notifiche/preferenze
+  // servono solo se entra in quelle schermate. Con un backend a worker
+  // singolo l'ordine della coda è di fatto l'ordine di arrivo dei dati:
+  // mettere le todo in fondo significava averle in cache per ultime,
+  // proprio quando l'utente le stava già aprendo a mano.
+  await runWithLimit([...listDetailsTasks, ...otherTasks], PREFETCH_CONCURRENCY);
 }
 
 // Il prefetch gira in background mentre l'utente naviga: ogni sua richiesta

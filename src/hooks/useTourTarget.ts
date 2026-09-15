@@ -4,18 +4,26 @@ import { useTour } from "../context/TourContext";
 
 /**
  * Registra un componente come "target" evidenziabile da un tour: quando
- * questo targetId diventa quello attivo dello step corrente, misura la
- * propria posizione assoluta a schermo e la riporta al TourContext, che la
- * usa per disegnare il buco nell'overlay.
+ * questo targetId (o uno degli id, se ne viene passato un array — utile
+ * quando lo stesso bottone fisico è il target di più tour diversi, es. il
+ * bottone modifica evidenziato sia dal tour di benvenuto che da quello
+ * contestuale della card lista) diventa quello attivo dello step corrente,
+ * misura la propria posizione assoluta a schermo e la riporta al
+ * TourContext, che la usa per disegnare il buco nell'overlay.
  *
  * Uso: <View ref={ref} onLayout={onLayout} collapsable={false}>...</View>
  * `collapsable={false}` è necessario su Android per evitare che la View
  * venga "appiattita" dal renderer nativo, il che farebbe fallire measure().
  */
-export function useTourTarget(targetId: string) {
+export function useTourTarget(targetId: string | string[]) {
   const { activeTargetId, reportTargetRect } = useTour();
   const ref = useRef<View>(null);
-  const isActive = activeTargetId === targetId;
+  const ids = Array.isArray(targetId) ? targetId : [targetId];
+  const isActive = activeTargetId != null && ids.includes(activeTargetId);
+  // Il targetId "reale" da riportare è sempre quello attivo del tour
+  // corrente (non il primo dell'array), altrimenti reportTargetRect lo
+  // scarterebbe silenziosamente perché non combacia con activeTargetId.
+  const reportId = activeTargetId ?? ids[0];
 
   const measure = useCallback(() => {
     if (!isActive) return;
@@ -24,10 +32,10 @@ export function useTourTarget(targetId: string) {
     // serve per disegnare il buco nell'overlay, che è a sua volta assoluto.
     ref.current?.measureInWindow((x, y, width, height) => {
       if (width > 0 && height > 0) {
-        reportTargetRect(targetId, { x, y, width, height });
+        reportTargetRect(reportId, { x, y, width, height });
       }
     });
-  }, [isActive, targetId, reportTargetRect]);
+  }, [isActive, reportId, reportTargetRect]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -40,10 +48,10 @@ export function useTourTarget(targetId: string) {
 
   useEffect(() => {
     return () => {
-      if (isActive) reportTargetRect(targetId, null);
+      if (isActive) reportTargetRect(reportId, null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetId]);
+  }, [reportId]);
 
   return { ref, onLayout: measure, isActive };
 }

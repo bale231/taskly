@@ -11,6 +11,7 @@ import LoginScreen from "../screens/LoginScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import RegisterScreen from "../screens/RegisterScreen";
 import ResetPasswordScreen from "../screens/ResetPasswordScreen";
+import { navigationRef } from "./navigationRef";
 import type { RootStackParamList } from "./types";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -55,7 +56,7 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export default function RootNavigator() {
   return (
-    <NavigationContainer linking={linking}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <Stack.Navigator
         initialRouteName="Login"
         screenOptions={{ headerShown: false }}

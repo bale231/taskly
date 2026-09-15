@@ -29,16 +29,8 @@ export default function App() {
       // Il delay minimo evita che lo splash animato lampeggi per una
       // frazione di secondo quando il bootstrap è già istantaneo.
       //
-      // Solo il lavoro sui TOKEN è bloccante: senza, le schermate partirebbero
-      // con richieste non autenticate. Il prefetch dei dati invece NON viene
-      // atteso — parte e prosegue in background mentre l'app è già usabile.
-      // Aspettarlo qui significava tenere lo splash finché non era scaricato
-      // il dettaglio di OGNI lista (una richiesta per lista, a gruppi di 3,
-      // più amici/notifiche/richieste) verso un backend a worker singolo: con
-      // 15-20 liste sono secondi interi di attesa prima ancora di vedere la
-      // Home, ed è la causa principale della lentezza percepita all'avvio.
-      // Le schermate hanno già la propria fetch on-demand come rete di
-      // sicurezza: il prefetch è un'ottimizzazione, non un prerequisito.
+      // Il bootstrap BLOCCANTE si ferma all'autenticazione: è l'unica cosa
+      // che serve davvero per decidere quale schermata mostrare.
       await Promise.all([
         clearSessionTokensIfNeeded()
           .then(() => proactiveTokenRefresh())
@@ -46,6 +38,14 @@ export default function App() {
         new Promise((resolve) => setTimeout(resolve, 800)),
       ]);
       setBootstrapped(true);
+
+      // Il prefetch (liste+todo, categorie, amici, richieste, notifiche)
+      // parte DOPO, senza await: riempie le cache mentre l'utente sta già
+      // usando l'app. Aspettarlo qui significava tenere lo splash fermo
+      // finché il backend — worker singolo su PythonAnywhere — non aveva
+      // risposto a decine di richieste: con 15-20 liste erano svariati
+      // secondi di attesa a ogni avvio, per dati che in larga parte
+      // l'utente non apriva nemmeno in quella sessione.
       prefetchAll().catch(() => {});
     };
 

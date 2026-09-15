@@ -64,7 +64,10 @@ export default function BottomNav({
   const isDark = theme === "dark";
   const isHome = route.name === "Home";
   const isProfile = route.name === "Profile";
-  const editModeTarget = useTourTarget("list-edit-mode-button");
+  const editModeTarget = useTourTarget(
+    isHome ? ["list-edit-mode-button", "welcome-edit-mode"] : "list-edit-mode-button"
+  );
+  const addButtonTarget = useTourTarget(isHome ? "welcome-create-list" : "__disabled__welcome-create-list");
 
   return (
     <View className="absolute bottom-0 left-0 right-0 z-50">
@@ -140,13 +143,20 @@ export default function BottomNav({
         )}
 
         {showAdd && onAdd && (
-          <AnimatedPressable
-            onPress={onAdd}
-            className="-mt-8 h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-blue-600 shadow-xl dark:border-gray-900"
-            accessibilityLabel={addTitle}
+          <View
+            ref={addButtonTarget.ref}
+            onLayout={addButtonTarget.onLayout}
+            collapsable={false}
+            className="-mt-8"
           >
-            <Plus size={32} strokeWidth={2.5} color="#FFFFFF" />
-          </AnimatedPressable>
+            <AnimatedPressable
+              onPress={onAdd}
+              className="h-16 w-16 items-center justify-center rounded-full border-4 border-white bg-blue-600 shadow-xl dark:border-gray-900"
+              accessibilityLabel={addTitle}
+            >
+              <Plus size={32} strokeWidth={2.5} color="#FFFFFF" />
+            </AnimatedPressable>
+          </View>
         )}
 
         {showEdit && onToggleEdit && (

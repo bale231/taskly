@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Dimensions, Pressable, Text, View } from "react-native";
 import Animated, {
+  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -16,11 +17,17 @@ import { useTheme } from "../context/ThemeContext";
 const PADDING = 10;
 
 /**
- * Overlay globale del tour attivo: sfondo scuro con un "buco" ritagliato
- * attorno al target corrente (via maschera SVG), un anello pulsante attorno
- * al buco, e una card con titolo/descrizione/progresso/bottone "Salta".
+ * Overlay globale del tour attivo. Due modalità:
+ *  - Step introduttivo (senza targetId, tipicamente il primo di "welcome"):
+ *    schermata scura a tutto schermo, centrata, con titolo/descrizione
+ *    grandi e i due bottoni "Inizia il tour"/"Salta il tutorial" — nessun
+ *    elemento da evidenziare ancora.
+ *  - Step normale: sfondo scuro con un "buco" ritagliato attorno al target
+ *    corrente (via maschera SVG), un anello pulsante, e una card con
+ *    titolo/descrizione/progresso/bottone "Salta" vicino al target.
  * Va montato una sola volta, vicino alla radice dell'app (dopo il
- * NavigationContainer, così sta sopra ogni schermata).
+ * NavigationContainer, così sta sopra ogni schermata, e sopravvive alla
+ * navigazione automatica tra schermate durante un tour multi-pagina).
  */
 export default function TourOverlay() {
   const { activeTourId, activeStepIndex, activeRect, nextStep, skipTour } = useTour();
@@ -53,11 +60,62 @@ export default function TourOverlay() {
     opacity: ringOpacity.value,
   }));
 
-  if (!activeTourId || !activeRect) return null;
+  if (!activeTourId) return null;
 
   const tour = TOURS[activeTourId];
   const step = tour.steps[activeStepIndex];
   const isLastStep = activeStepIndex === tour.steps.length - 1;
+  const isIntroStep = !step.targetId;
+
+  if (isIntroStep) {
+    return (
+      <Animated.View
+        entering={FadeIn.duration(250)}
+        pointerEvents="box-none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0,0,0,0.82)",
+          alignItems: "center",
+          justifyContent: "center",
+          paddingHorizontal: 32,
+        }}
+      >
+        <Text
+          style={{ fontSize: 24, fontWeight: "800", textAlign: "center", marginBottom: 14, color: "#FFFFFF" }}
+        >
+          {step.title}
+        </Text>
+        <Text
+          style={{ fontSize: 15, lineHeight: 22, textAlign: "center", color: "rgba(255,255,255,0.85)" }}
+        >
+          {step.description}
+        </Text>
+
+        <View style={{ marginTop: 32, width: "100%", gap: 12 }}>
+          <Pressable
+            onPress={nextStep}
+            style={{
+              backgroundColor: "#3B82F6",
+              borderRadius: 14,
+              paddingVertical: 14,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700" }}>Inizia il tour</Text>
+          </Pressable>
+          <Pressable onPress={skipTour} style={{ paddingVertical: 10, alignItems: "center" }} hitSlop={8}>
+            <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 14 }}>Salta il tutorial</Text>
+          </Pressable>
+        </View>
+      </Animated.View>
+    );
+  }
+
+  if (!activeRect) return null;
 
   const holeX = activeRect.x - PADDING;
   const holeY = activeRect.y - PADDING;

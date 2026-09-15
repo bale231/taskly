@@ -105,8 +105,29 @@ export default function SupportWidget() {
   const panelScale = useSharedValue(0.85);
   const panelOpacity = useSharedValue(0);
   const buttonScale = useSharedValue(1);
+  // Material container transform (Android): il pannello si espande dal
+  // bottone FAB (basso a destra) invece di scalare dal centro come su iOS,
+  // con una curva decelerate netta e senza rimbalzo a molla.
+  const androidReveal = useSharedValue(0);
 
   useEffect(() => {
+    if (Platform.OS === "android") {
+      if (isOpen) {
+        setShouldRenderPanel(true);
+        androidReveal.value = withTiming(1, { duration: 260, easing: Easing.out(Easing.cubic) });
+        setTimeout(() => chatInputRef.current?.focus(), 260);
+      } else {
+        androidReveal.value = withTiming(
+          0,
+          { duration: 180, easing: Easing.in(Easing.cubic) },
+          (finished) => {
+            if (finished) runOnJS(setShouldRenderPanel)(false);
+          }
+        );
+      }
+      return;
+    }
+
     if (isOpen) {
       setShouldRenderPanel(true);
       panelOpacity.value = withTiming(1, { duration: 200 });
@@ -118,19 +139,39 @@ export default function SupportWidget() {
       });
       panelScale.value = withTiming(0.85, { duration: 150 });
     }
-  }, [isOpen, panelOpacity, panelScale]);
+  }, [isOpen, panelOpacity, panelScale, androidReveal]);
 
-  // Solo lo scale/posizione sull'Animated.View esterno, che è antenato del
-  // GlassSurface: animarne l'opacità disabiliterebbe il vero Liquid Glass
-  // in modo permanente invece di renderlo solo invisibile (limite noto,
-  // vedi commento su GlassSurface.tsx). Il fade vero è sul contenuto sopra
-  // al vetro, vedi contentFadeStyle.
-  const panelStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: panelScale.value }],
-  }));
+  // Su iOS, solo lo scale/posizione sull'Animated.View esterno, che è
+  // antenato del GlassSurface: animarne l'opacità disabiliterebbe il vero
+  // Liquid Glass in modo permanente invece di renderlo solo invisibile
+  // (limite noto, vedi commento su GlassSurface.tsx). Il fade vero è sul
+  // contenuto sopra al vetro, vedi contentFadeStyle.
+  // Su Android, GlassSurface è una superficie piena (non vetro nativo), che
+  // non ha quel limite: lì l'opacità sul contenitore esterno guida il
+  // Material container transform (androidReveal) senza controindicazioni.
+  const panelStyle = useAnimatedStyle(() => {
+    if (Platform.OS === "android") {
+      return {
+        opacity: androidReveal.value,
+        transform: [
+          // L'origine dell'espansione è già ancorata in basso a destra da
+          // transformOrigin sotto: qui basta lo scale, senza offset di
+          // traslazione aggiuntivi.
+          { scale: 0.4 + androidReveal.value * 0.6 },
+        ],
+      };
+    }
+    return {
+      transform: [{ scale: panelScale.value }],
+    };
+  });
 
+  // Su Android il fade del contenuto è già coperto dall'opacity di
+  // panelStyle (il contenitore esterno lì non è vetro nativo, quindi
+  // animarne l'opacità non ha controindicazioni): qui basta restare
+  // sempre visibile, per non applicare il fade due volte.
   const contentFadeStyle = useAnimatedStyle(() => ({
-    opacity: panelOpacity.value,
+    opacity: Platform.OS === "android" ? 1 : panelOpacity.value,
   }));
 
   const buttonStyle = useAnimatedStyle(() => ({
@@ -272,6 +313,9 @@ export default function SupportWidget() {
               shadowOpacity: 0.3,
               shadowRadius: 16,
               elevation: 10,
+              // Ancora l'espansione Android all'angolo basso-destra (dove
+              // sta il FAB che apre il pannello), invece che al centro.
+              transformOrigin: Platform.OS === "android" ? "bottom right" : "center",
             },
           ]}
         >
