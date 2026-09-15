@@ -29,22 +29,24 @@ export default function App() {
       // Il delay minimo evita che lo splash animato lampeggi per una
       // frazione di secondo quando il bootstrap è già istantaneo.
       //
-      // Se l'utente risulta già loggato (token persistiti da "Rimani
-      // loggato"), il prefetch di TUTTI i dati (liste+todo, categorie,
-      // amici, richieste, notifiche, profilo) avviene qui, prima di
-      // mostrare l'app: così la Home e ogni altra schermata partono già
-      // con i dati pronti in cache, senza fetch on-demand né skeleton
-      // durante la navigazione. Se il prefetch fallisce (offline, backend
-      // giù), non blocca l'avvio: le schermate ricadranno sulla cache
-      // salvata in una sessione precedente o sulla propria fetch normale.
+      // Solo il lavoro sui TOKEN è bloccante: senza, le schermate partirebbero
+      // con richieste non autenticate. Il prefetch dei dati invece NON viene
+      // atteso — parte e prosegue in background mentre l'app è già usabile.
+      // Aspettarlo qui significava tenere lo splash finché non era scaricato
+      // il dettaglio di OGNI lista (una richiesta per lista, a gruppi di 3,
+      // più amici/notifiche/richieste) verso un backend a worker singolo: con
+      // 15-20 liste sono secondi interi di attesa prima ancora di vedere la
+      // Home, ed è la causa principale della lentezza percepita all'avvio.
+      // Le schermate hanno già la propria fetch on-demand come rete di
+      // sicurezza: il prefetch è un'ottimizzazione, non un prerequisito.
       await Promise.all([
         clearSessionTokensIfNeeded()
           .then(() => proactiveTokenRefresh())
-          .then(() => prefetchAll())
           .catch(() => {}),
         new Promise((resolve) => setTimeout(resolve, 800)),
       ]);
       setBootstrapped(true);
+      prefetchAll().catch(() => {});
     };
 
     bootstrap();

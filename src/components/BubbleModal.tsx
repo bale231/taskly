@@ -100,6 +100,16 @@ export default function BubbleModal({
     transform: variant === "bottom" ? [{ translateY: translateY.value }] : [{ scale: scale.value }],
   }));
 
+  // Finché la modale non serve, non si costruisce NIENTE del suo contenuto:
+  // `children` è un albero già valutato dal genitore, ma senza questo early
+  // return React lo monterebbe comunque (il <Modal> nativo nasconde la
+  // finestra, non impedisce il mount dell'albero React sottostante). In una
+  // schermata con 4 modali — ognuna con BlurView, GlassSurface, input e
+  // AnimatedAlert — montarle tutte a ogni apertura di lista costava oltre un
+  // secondo di commit: il vero delay percepito all'ingresso (e all'uscita,
+  // per lo smontaggio), indipendentemente dal numero di todo.
+  if (!shouldRender) return null;
+
   return (
     <Modal visible={shouldRender} transparent animationType="none" onRequestClose={onRequestClose}>
       <Animated.View

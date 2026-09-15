@@ -76,12 +76,14 @@ import { useTour } from "../context/TourContext";
 import { useTourTarget } from "../hooks/useTourTarget";
 import type { RootStackParamList } from "../navigation/types";
 import { playCreateFeedback, playDeleteFeedback } from "../services/feedback";
+import { syncSiriLists } from "../services/siriSync";
 import {
   getHomeCache,
   getLastListsCount,
   setHomeCache,
   setLastListsCount,
 } from "../services/storage";
+import { withNetworkPriority } from "../services/prefetch";
 import type { Category, ListSortOption, TodoList } from "../types/todo";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Home">;
@@ -225,6 +227,10 @@ export default function HomeScreen({ navigation }: Props) {
           // di 0 skeleton per uno stato realmente vuoto.
           setLastListsCount(data.length);
           if (username) setHomeCache("lists", data, username);
+          // Tiene aggiornato l'elenco liste che Siri propone per "aggiungi
+          // <todo> a <lista>": deve riflettere sempre le liste vere, non
+          // solo quelle dell'ultima apertura in cui l'utente le ha viste.
+          syncSiriLists(data.map((l) => ({ id: l.id, name: l.name })));
         }
       } catch (err) {
         console.error("Errore nel caricamento liste:", err);
@@ -322,20 +328,23 @@ export default function HomeScreen({ navigation }: Props) {
         }
 
         try {
-          const [order, alpha] = await Promise.all([
-            fetchListsSortOrder(),
-            fetchCategorySortAlpha(),
-          ]);
+          // Priorità sul prefetch in background (backend a worker singolo):
+          // queste sono richieste che l'utente sta aspettando a vista.
+          const [order, alpha] = await withNetworkPriority(() =>
+            Promise.all([fetchListsSortOrder(), fetchCategorySortAlpha()])
+          );
           setSortOption(order);
           setCategorySortAlpha(alpha);
         } catch (err) {
           console.error("Impossibile caricare preferenze:", err);
         }
 
-        const [, categoriesData] = await Promise.all([
-          fetchLists(hadCache, resUser.username),
-          fetchCategories(hadCache, resUser.username),
-        ]);
+        const [, categoriesData] = await withNetworkPriority(() =>
+          Promise.all([
+            fetchLists(hadCache, resUser.username),
+            fetchCategories(hadCache, resUser.username),
+          ])
+        );
 
         try {
           const result = await getSelectedCategory();

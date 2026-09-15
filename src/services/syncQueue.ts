@@ -51,19 +51,56 @@ let processing = false;
 // questa promise fa da lock cooperativo tra le chiamate sovrapposte.
 let currentRun: Promise<void> | null = null;
 
-async function readQueue(): Promise<PendingOp[]> {
+// Specchio in memoria della coda, sincrono: enqueueX diventava lento su
+// interazioni ravvicinate (es. spuntare più todo di fila) perché ogni
+// chiamata faceva un `AsyncStorage.getItem` + `setItem` completo (parse +
+// stringify dell'intera coda) prima ancora di poter chiamare processQueue.
+// Ora si legge/scrive qui in memoria (istantaneo) e si persiste su disco
+// con un breve debounce, stesso principio già applicato alla cache liste
+// (vedi updateListTodosCacheTodos in storage.ts).
+let queueMemory: PendingOp[] | null = null;
+let queueWriteTimer: ReturnType<typeof setTimeout> | null = null;
+const QUEUE_WRITE_DEBOUNCE_MS = 250;
+
+async function loadQueueMemory(): Promise<PendingOp[]> {
+  if (queueMemory) return queueMemory;
   const raw = await AsyncStorage.getItem(QUEUE_KEY);
-  if (!raw) return [];
+  if (!raw) {
+    queueMemory = [];
+    return queueMemory;
+  }
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    queueMemory = Array.isArray(parsed) ? parsed : [];
   } catch {
-    return [];
+    queueMemory = [];
   }
+  return queueMemory;
 }
 
-async function writeQueue(queue: PendingOp[]): Promise<void> {
-  await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+async function readQueue(): Promise<PendingOp[]> {
+  return loadQueueMemory();
+}
+
+/** Aggiorna subito lo specchio in memoria; la persistenza su disco è
+ * debounced, tranne quando `immediate` è true (usata da processQueue prima
+ * di ogni chiamata di rete, per non perdere lo stato se l'app viene chiusa
+ * a metà di un giro). */
+async function writeQueue(queue: PendingOp[], immediate = false): Promise<void> {
+  queueMemory = queue;
+  if (immediate) {
+    if (queueWriteTimer) {
+      clearTimeout(queueWriteTimer);
+      queueWriteTimer = null;
+    }
+    await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    return;
+  }
+  if (queueWriteTimer) clearTimeout(queueWriteTimer);
+  queueWriteTimer = setTimeout(() => {
+    queueWriteTimer = null;
+    AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(queueMemory ?? [])).catch(() => {});
+  }, QUEUE_WRITE_DEBOUNCE_MS);
 }
 
 /** ID temporanei sempre negativi e decrescenti: non collidono mai con un
@@ -144,8 +181,28 @@ export async function hasPendingSync(): Promise<boolean> {
  * resta in coda); un errore applicativo (4xx: es. lista/todo già cancellati
  * altrove) scarta la singola operazione e continua con le successive,
  * altrimenti un dato ormai non valido bloccherebbe la coda per sempre.
+ *
+ * Debounced: tap ravvicinati (es. spuntare più todo in rapida sequenza)
+ * chiamavano ognuno un giro completo appena il precedente finiva la sua
+ * prima operazione — ogni giro rilegge la coda e fa una richiesta di rete,
+ * competendo con l'animazione/re-render della UI in corso. Aspettando un
+ * breve istante di inattività, le operazioni accodate nel frattempo entrano
+ * tutte nello stesso giro invece di uno a testa.
  */
+const PROCESS_QUEUE_DEBOUNCE_MS = 150;
+let processQueueTimer: ReturnType<typeof setTimeout> | null = null;
+
 export async function processQueue(): Promise<void> {
+  if (processQueueTimer) clearTimeout(processQueueTimer);
+  return new Promise((resolve) => {
+    processQueueTimer = setTimeout(() => {
+      processQueueTimer = null;
+      runProcessQueueNow().then(resolve);
+    }, PROCESS_QUEUE_DEBOUNCE_MS);
+  });
+}
+
+async function runProcessQueueNow(): Promise<void> {
   if (processing) return currentRun ?? undefined;
   processing = true;
   currentRun = runQueue().finally(() => {
@@ -167,13 +224,23 @@ async function runQueue(): Promise<void> {
       // tenerne una copia in memoria, così un enqueue arrivato nel frattempo
       // (es. l'utente continua a interagire mentre la coda gira) non viene
       // perso da una scrittura che sovrascriverebbe con uno snapshot vecchio.
+      // `immediate`: qui conta la persistenza affidabile (un'operazione già
+      // confermata dal server non deve rischiare di essere rieseguita se
+      // l'app si chiude prima che il debounce scriva su disco), non la
+      // velocità — a differenza di enqueueX, che gira su ogni singolo tap.
       const latest = await readQueue();
-      await writeQueue(latest.filter((o) => o.id !== op.id));
+      await writeQueue(
+        latest.filter((o) => o.id !== op.id),
+        true
+      );
     } catch (err) {
       if (isNetworkError(err)) return; // riprova al prossimo trigger
       console.warn("syncQueue: operazione scartata dopo errore applicativo", op, err);
       const latest = await readQueue();
-      await writeQueue(latest.filter((o) => o.id !== op.id));
+      await writeQueue(
+        latest.filter((o) => o.id !== op.id),
+        true
+      );
     }
   }
 }

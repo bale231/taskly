@@ -17,7 +17,6 @@ import {
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dimensions,
-  InteractionManager,
   Keyboard,
   Pressable,
   StyleSheet,
@@ -63,6 +62,7 @@ import {
   onTempIdResolved,
   processQueue,
 } from "../services/syncQueue";
+import { withNetworkPriority } from "../services/prefetch";
 import {
   playCreateFeedback,
   playDeleteFeedback,
@@ -181,23 +181,14 @@ const TodoRow = memo(function TodoRow({
           </View>
 
           <View className="flex-1">
-            <View className="flex-row items-center gap-2">
-              <MarqueeText
-                className={`text-xl font-semibold ${
-                  todo.completed ? "text-gray-400 line-through" : "text-gray-900 dark:text-white"
-                }`}
-                highlight={searchQuery}
-              >
-                {todo.title}
-              </MarqueeText>
-              {todo.quantity && todo.unit && (
-                <View className="rounded-full bg-blue-500/20 px-3 py-1">
-                  <Text className="text-sm font-medium text-blue-700 dark:text-blue-300">
-                    {todo.quantity} {todo.unit}
-                  </Text>
-                </View>
-              )}
-            </View>
+            <MarqueeText
+              className={`text-xl font-semibold ${
+                todo.completed ? "text-gray-400 line-through" : "text-gray-900 dark:text-white"
+              }`}
+              highlight={searchQuery}
+            >
+              {todo.title}
+            </MarqueeText>
             {todo.description && (
               <Text
                 numberOfLines={2}
@@ -212,6 +203,14 @@ const TodoRow = memo(function TodoRow({
               </Text>
             )}
           </View>
+
+          {todo.quantity && todo.unit && (
+            <View className="ml-2 rounded-full bg-blue-500/20 px-3 py-1">
+              <Text className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                {todo.quantity} {todo.unit}
+              </Text>
+            </View>
+          )}
 
           {canDrag && !editMode && (
             <Pressable onLongPress={onDrag} disabled={isActive} className="ml-2 p-1.5">
@@ -236,7 +235,62 @@ const TodoRow = memo(function TodoRow({
       </SwipeableRow>
     </DraggableTodoRow>
   );
-});
+}, areRowPropsEqual);
+
+/**
+ * `memo()` da solo confronta le prop per identità: ogni refetch silenzioso
+ * sostituisce i todo con oggetti nuovi (stessi valori, riferimento diverso),
+ * quindi TUTTE le righe montate si ri-renderizzavano anche quando nulla di
+ * visibile era cambiato — su liste lunghe erano secondi di JS bloccato dopo
+ * ogni apertura. Qui si confrontano i soli campi che la riga disegna
+ * davvero.
+ */
+function areRowPropsEqual(prev: TodoRowProps, next: TodoRowProps): boolean {
+  return (
+    prev.todo.id === next.todo.id &&
+    prev.todo.title === next.todo.title &&
+    prev.todo.completed === next.todo.completed &&
+    prev.todo.description === next.todo.description &&
+    prev.todo.quantity === next.todo.quantity &&
+    prev.todo.unit === next.todo.unit &&
+    prev.todo.created_by?.full_name === next.todo.created_by?.full_name &&
+    prev.editMode === next.editMode &&
+    prev.isShared === next.isShared &&
+    prev.selected === next.selected &&
+    prev.canDrag === next.canDrag &&
+    prev.isActive === next.isActive &&
+    prev.index === next.index &&
+    prev.searchQuery === next.searchQuery &&
+    prev.onDrag === next.onDrag &&
+    prev.onToggle === next.onToggle &&
+    prev.onToggleSelect === next.onToggleSelect &&
+    prev.onEdit === next.onEdit &&
+    prev.onDelete === next.onDelete &&
+    prev.onMove === next.onMove &&
+    prev.onConfirmNeeded === next.onConfirmNeeded
+  );
+}
+
+/** Confronto sui soli campi che la UI disegna: serve a capire se un refetch
+ * ha portato davvero qualcosa di nuovo o solo oggetti equivalenti. */
+function sameTodos(a: Todo[], b: Todo[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.title !== y.title ||
+      x.completed !== y.completed ||
+      x.description !== y.description ||
+      x.quantity !== y.quantity ||
+      x.unit !== y.unit
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function sortTodos(todos: Todo[], sortBy: TodoSortOption): Todo[] {
   const sorted = [...todos];
@@ -279,15 +333,29 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   // stack) compaia per un frame lo skeleton in attesa della lettura async
   // di AsyncStorage — qui i dati sono già pronti al primissimo render.
   //
-  // Il map+sort dei todo, però, NON va fatto qui nel lazy initializer: con
-  // liste grandi (100+ todo) è abbastanza pesante da bloccare il thread JS
-  // proprio nel frame in cui la transizione nativa di ingresso (Home ->
-  // ListDetail) sta animando, facendola percepire come uno scatto secco
-  // invece che fluida. `todos` parte vuoto ed è popolato subito dopo, in un
-  // effect che gira DOPO il commit del primo render (quindi dopo che
-  // l'animazione è già partita) — vedi useEffect qui sotto.
+  // `todos` va popolato SUBITO dal lazy initializer (gira una sola volta,
+  // sincrono, prima del primo render) altrimenti c'è una finestra reale in
+  // cui `isLoading` è già `false` (impostato sincronamente sotto) ma `todos`
+  // è ancora `[]` — la FlatList mostra il proprio stato "vuoto" invece dello
+  // skeleton, un vuoto totale visibile anche su liste piccole.
+  //
+  // MA il map+sort (`.map` con spread per _originalIndex + `.sort`) NON va
+  // fatto qui: il lazy initializer gira nel momento esatto in cui React
+  // monta lo screen, che con native-stack coincide con l'inizio
+  // dell'animazione push nativa — bloccare il thread JS proprio lì (anche
+  // solo per un mapping di 100 elementi) si sente come uno scatto/ritardo
+  // al tap, non come un problema di scroll. È il bug esatto per cui era
+  // stato introdotto `InteractionManager.runAfterInteractions` in una
+  // sessione precedente, poi rimosso qui in una fix successiva che pensava
+  // (erroneamente) che il lazy initializer "girasse prima che React
+  // committi" e quindi non contasse — il costo lo si paga comunque sul
+  // thread JS, semplicemente in un momento diverso, e quel momento è il
+  // peggiore possibile. Qui i dati grezzi (senza sort) sono usati come primo
+  // render — evita il vuoto — mentre il sort vero viene applicato in un
+  // useEffect subito dopo (vedi sotto), che gira DOPO il commit e quindi
+  // dopo che l'animazione nativa è già partita.
   const initialCache = getListTodosCacheSync<ListDetailsResponse>(listId);
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [todos, setTodos] = useState<Todo[]>(() => initialCache?.todos ?? []);
   const [listName, setListName] = useState(initialCache?.name ?? "");
   const [listColor, setListColor] = useState(initialCache?.color || "blue");
   const [isShared, setIsShared] = useState(initialCache?.is_shared || false);
@@ -365,7 +433,10 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     async (silent = false) => {
       if (!silent) setIsLoading(true);
       try {
-        const data = await fetchListDetails(listId);
+        // Priorità sul prefetch in background: senza, questa richiesta —
+        // quella che l'utente sta aspettando a vista — può accodarsi dietro
+        // le richieste di prefetch verso lo stesso backend a worker singolo.
+        const data = await withNetworkPriority(() => fetchListDetails(listId));
         if (!data) return;
 
         const todosWithIndex: Todo[] = data.todos.map((t: Todo, index: number) => ({
@@ -379,7 +450,16 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             : "created";
 
         setSortOption(effectiveSort);
-        setTodos(sortTodos(todosWithIndex, effectiveSort));
+        // Il refetch silenzioso all'apertura di solito riporta esattamente
+        // ciò che la cache mostrava già: rimpiazzare comunque l'array
+        // significava dare a ogni riga un oggetto `todo` con riferimento
+        // nuovo e rifare il lavoro di render per l'intera lista senza che
+        // nulla fosse cambiato a schermo. Se i dati coincidono, si tiene lo
+        // stato precedente e React non ha niente da fare.
+        setTodos((prev) => {
+          const next = sortTodos(todosWithIndex, effectiveSort);
+          return sameTodos(prev, next) ? prev : next;
+        });
         setListName(data.name);
         setListColor(data.color || "blue");
         setIsShared(data.is_shared || false);
@@ -409,30 +489,34 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   }, [showAlert]);
 
   useEffect(() => {
-    // Il caso cache-hit ha nome/colore/is_shared già impostati sincronamente
-    // dai lazy initializer sopra — qui resta solo popolare l'array `todos`
-    // (il map+sort potenzialmente pesante), fatto apposta DENTRO
-    // `runAfterInteractions`: aspetta che la transizione nativa di ingresso
-    // sia terminata prima di fare quel lavoro, così non le ruba frame e la
-    // navigazione resta fluida anche su liste da 100+ todo.
     const applyTodos = (cached: ListDetailsResponse) => {
-      InteractionManager.runAfterInteractions(() => {
-        const todosWithIndex: Todo[] = cached.todos.map((t: Todo, index: number) => ({
-          ...t,
-          _originalIndex: t._originalIndex ?? index,
-        }));
-        const effectiveSort: TodoSortOption =
-          cached.sort_order === "alphabetical" || cached.sort_order === "completed"
-            ? cached.sort_order
-            : "created";
-        setSortOption(effectiveSort);
-        setTodos(sortTodos(todosWithIndex, effectiveSort));
+      const todosWithIndex: Todo[] = cached.todos.map((t: Todo, index: number) => ({
+        ...t,
+        _originalIndex: t._originalIndex ?? index,
+      }));
+      const effectiveSort: TodoSortOption =
+        cached.sort_order === "alphabetical" || cached.sort_order === "completed"
+          ? cached.sort_order
+          : "created";
+      setSortOption(effectiveSort);
+      setTodos((prev) => {
+        const next = sortTodos(todosWithIndex, effectiveSort);
+        return sameTodos(prev, next) ? prev : next;
       });
     };
 
     const load = async () => {
       if (initialCache) {
-        applyTodos(initialCache);
+        // Il primo render ha già mostrato `initialCache.todos` grezzi (senza
+        // map/_originalIndex/sort, vedi lazy initializer sopra) proprio per
+        // non bloccare il thread JS nel frame in cui parte l'animazione push
+        // nativa. Il sort vero è rimandato al prossimo tick: basta uscire dal
+        // frame di montaggio corrente, non serve (e non conviene) aspettare
+        // `InteractionManager.runAfterInteractions`, che attende la fine di
+        // TUTTE le interazioni native in coda — con un prefetch globale
+        // ancora attivo in background il ritardo poteva allungarsi ben oltre
+        // un frame, dando l'impressione di un caricamento lento percepibile.
+        setTimeout(() => applyTodos(initialCache), 0);
         fetchTodos(true);
         return;
       }
@@ -477,38 +561,63 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     });
   }, [listId]);
 
-  const handleToggle = (todoId: number, event: GestureResponderEvent) => {
-    const wasCompleted = todos.find((t) => t.id === todoId)?.completed ?? false;
-    if (wasCompleted) {
-      playTodoUncompleteFeedback();
-    } else {
-      playTodoCompleteFeedback();
-      const { pageX, pageY } = event.nativeEvent;
-      particleBurstRef.current?.trigger(pageX, pageY);
-    }
-    setTodos((prev) => {
-      const updated = prev.map((t) => (t.id === todoId ? { ...t, completed: !t.completed } : t));
-      const sorted = sortOption === "completed" ? sortTodos(updated, "completed") : updated;
-      updateListTodosCacheTodos(listId, sorted);
-      return sorted;
-    });
-    enqueueToggleTodo(todoId).then(processQueue);
-  };
+  // useCallback con identità stabile: passati come prop a TodoRow (memo())
+  // dentro il renderItem della FlatList, un'identità che cambia ad ogni
+  // render di questo componente (ogni ricerca, ogni toggle di un ALTRO
+  // todo, ogni cambio di editMode...) vanifica il memo e forza il re-render
+  // di ogni riga montata — con windowSize alto (vedi commento sopra sulla
+  // virtualizzazione) questo si traduce in un costo cumulativo enorme durante
+  // lo scroll su liste lunghe. `wasCompleted` letto dentro il setTodos
+  // funzionale (non dalla closure di `todos`) apposta per non dover mettere
+  // `todos` tra le dipendenze, che altrimenti renderebbe l'handler instabile
+  // ad ogni singola modifica ai todo, cioè quasi sempre.
+  const handleToggle = useCallback(
+    (todoId: number, event: GestureResponderEvent) => {
+      setTodos((prev) => {
+        const wasCompleted = prev.find((t) => t.id === todoId)?.completed ?? false;
+        if (wasCompleted) {
+          playTodoUncompleteFeedback();
+        } else {
+          playTodoCompleteFeedback();
+          const { pageX, pageY } = event.nativeEvent;
+          particleBurstRef.current?.trigger(pageX, pageY);
+        }
+        const updated = prev.map((t) => (t.id === todoId ? { ...t, completed: !t.completed } : t));
+        const sorted = sortOption === "completed" ? sortTodos(updated, "completed") : updated;
+        updateListTodosCacheTodos(listId, sorted);
+        return sorted;
+      });
+      enqueueToggleTodo(todoId).then(processQueue);
+    },
+    [listId, sortOption]
+  );
 
-  const handleDelete = (todoId: number) => {
-    playDeleteFeedback();
-    // L'eliminazione parte quasi sempre da uno swipe (nessun punto di tap
-    // preciso disponibile) o dal bottone edit-mode: le particelle esplodono
-    // dal centro schermo invece che da una coordinata specifica del gesto.
-    const { width, height } = Dimensions.get("window");
-    particleBurstRef.current?.trigger(width / 2, height / 2, "#DC2626");
-    setTodos((prev) => {
-      const updated = prev.filter((t) => t.id !== todoId);
-      updateListTodosCacheTodos(listId, updated);
-      return updated;
-    });
-    enqueueDeleteTodo(todoId).then(processQueue);
-  };
+  const handleDelete = useCallback(
+    (todoId: number) => {
+      playDeleteFeedback();
+      // L'eliminazione parte quasi sempre da uno swipe (nessun punto di tap
+      // preciso disponibile) o dal bottone edit-mode: le particelle esplodono
+      // dal centro schermo invece che da una coordinata specifica del gesto.
+      const { width, height } = Dimensions.get("window");
+      particleBurstRef.current?.trigger(width / 2, height / 2, "#DC2626");
+      setTodos((prev) => {
+        const updated = prev.filter((t) => t.id !== todoId);
+        updateListTodosCacheTodos(listId, updated);
+        return updated;
+      });
+      enqueueDeleteTodo(todoId).then(processQueue);
+    },
+    [listId]
+  );
+
+  const handleToggleSelect = useCallback((todoId: number) => {
+    setSelectedIds((ids) => (ids.includes(todoId) ? ids.filter((i) => i !== todoId) : [...ids, todoId]));
+  }, []);
+
+  const handleMoveRequest = useCallback((todo: Todo) => {
+    setTodoToMove(todo);
+    setShowMoveModal(true);
+  }, []);
 
   const handleCreateTodo = async (event?: GestureResponderEvent) => {
     if (!title.trim()) {
@@ -891,17 +1000,10 @@ export default function ListDetailScreen({ route, navigation }: Props) {
             searchQuery={searchQuery}
             onDrag={drag}
             onToggle={handleToggle}
-            onToggleSelect={(todoId) =>
-              setSelectedIds((ids) =>
-                ids.includes(todoId) ? ids.filter((i) => i !== todoId) : [...ids, todoId]
-              )
-            }
+            onToggleSelect={handleToggleSelect}
             onEdit={setEditedTodo}
             onDelete={handleDelete}
-            onMove={(todo) => {
-              setTodoToMove(todo);
-              setShowMoveModal(true);
-            }}
+            onMove={handleMoveRequest}
             onConfirmNeeded={setRowConfirm}
           />
         )}

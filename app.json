@@ -14,6 +14,9 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Taskly usa la libreria foto per aggiornare la tua immagine del profilo.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.bale231.taskly"]
       }
     },
     "android": {

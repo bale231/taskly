@@ -75,6 +75,31 @@ export async function prefetchAll(): Promise<void> {
   await runWithLimit([...otherTasks, ...listDetailsTasks], PREFETCH_CONCURRENCY);
 }
 
+// Il prefetch gira in background mentre l'utente naviga: ogni sua richiesta
+// occupa l'unico worker del backend, quindi la fetch della schermata che
+// l'utente sta REALMENTE aprendo può ritrovarsi in coda dietro di esse e
+// impiegare secondi. Le schermate segnalano qui il proprio lavoro urgente:
+// finché ce n'è almeno uno in corso, il prefetch smette di partire con nuovi
+// task (quelli già in volo finiscono) e riprende appena la UI ha finito.
+let urgentRequests = 0;
+const PAUSE_POLL_MS = 60;
+
+/** Da usare attorno a una fetch che l'utente sta aspettando a vista. */
+export async function withNetworkPriority<T>(work: () => Promise<T>): Promise<T> {
+  urgentRequests++;
+  try {
+    return await work();
+  } finally {
+    urgentRequests--;
+  }
+}
+
+async function waitWhilePaused(): Promise<void> {
+  while (urgentRequests > 0) {
+    await new Promise((resolve) => setTimeout(resolve, PAUSE_POLL_MS));
+  }
+}
+
 /** Al massimo tante richieste in volo insieme quante ne regge comodamente il
  * backend a worker singolo, senza mettere in coda dietro di sé le richieste
  * della UI (Home, la lista che l'utente sta davvero aprendo). Le richieste
@@ -85,6 +110,8 @@ async function runWithLimit(tasks: Array<() => Promise<void>>, limit: number): P
   let cursor = 0;
   const worker = async () => {
     while (cursor < tasks.length) {
+      // Cede il passo alle fetch che l'utente sta aspettando a vista.
+      await waitWhilePaused();
       const task = tasks[cursor++];
       try {
         await task();

@@ -26,6 +26,7 @@ export const CACHE_TTL = {
   CATEGORIES: 60 * 1000, // 1 minute for categories
   TODO_DETAILS: 15 * 1000, // 15 seconds for todo details
   USER_PREFS: 5 * 60 * 1000, // 5 minutes for user preferences
+  LIST_SHARES: 30 * 1000, // 30 seconds for list sharing info
 };
 
 /**

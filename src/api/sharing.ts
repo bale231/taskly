@@ -4,6 +4,7 @@
 // del backend, coerenti con friends.ts): parsing tollerante come lì.
 import { API_URL } from "./config";
 import { fetchWithAuth } from "./todos";
+import { CACHE_TTL, createCacheKey, deduplicatedFetch, invalidateCache } from "../utils/apiCache";
 
 export interface SharedUser {
   user_id: number;
@@ -14,10 +15,21 @@ export interface SharedUser {
   shared_at: string;
 }
 
+// Prima non passava da cache/dedup: ogni mount di ListDetailScreen (anche
+// per liste non condivise) faceva una richiesta di rete vera, in
+// concorrenza con fetchListDetails/il prefetch verso lo stesso backend
+// single-worker — un contributo diretto al ritardo di apertura schermata.
 export async function getListShares(listId: number): Promise<SharedUser[]> {
-  const res = await fetchWithAuth(`${API_URL}/lists/${listId}/shares/`);
-  if (!res.ok) throw new Error("Errore caricamento condivisioni");
-  return res.json();
+  const cacheKey = createCacheKey("list-shares", listId);
+  return deduplicatedFetch(
+    cacheKey,
+    async () => {
+      const res = await fetchWithAuth(`${API_URL}/lists/${listId}/shares/`);
+      if (!res.ok) throw new Error("Errore caricamento condivisioni");
+      return res.json();
+    },
+    CACHE_TTL.LIST_SHARES
+  );
 }
 
 export async function shareList(listId: number, userId: number, canEdit: boolean) {
@@ -26,6 +38,7 @@ export async function shareList(listId: number, userId: number, canEdit: boolean
     body: JSON.stringify({ user_id: userId, can_edit: canEdit }),
   });
   if (!res.ok) throw new Error("Errore condivisione lista");
+  invalidateCache(new RegExp(`^list-shares:${listId}`));
   return res.json();
 }
 
@@ -34,5 +47,6 @@ export async function unshareList(listId: number, userId: number) {
     method: "DELETE",
   });
   if (!res.ok) throw new Error("Errore rimozione condivisione");
+  invalidateCache(new RegExp(`^list-shares:${listId}`));
   return res.json();
 }

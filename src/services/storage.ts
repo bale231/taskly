@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { clearSiriTokens, syncSiriTokens } from "./siriSync";
 
 /**
  * Sostituto di localStorage/sessionStorage per React Native.
@@ -39,22 +40,28 @@ export async function setTokens(
     [REFRESH_TOKEN, refreshToken],
     [PERSISTENT, persistent ? "1" : "0"],
   ]);
+  syncSiriTokens(accessToken, refreshToken);
 }
 
 /** Aggiorna il solo access token (dopo un refresh), preservando il resto. */
 export async function setAccessToken(accessToken: string): Promise<void> {
   await AsyncStorage.setItem(ACCESS_TOKEN, accessToken);
+  const refresh = await getRefreshToken();
+  if (refresh) syncSiriTokens(accessToken, refresh);
 }
 
 /** Il backend può ruotare il refresh token: in quel caso va sovrascritto. */
 export async function setRefreshToken(refreshToken: string): Promise<void> {
   await AsyncStorage.setItem(REFRESH_TOKEN, refreshToken);
+  const access = await getAccessToken();
+  if (access) syncSiriTokens(access, refreshToken);
 }
 
 export async function clearTokens(): Promise<void> {
   await AsyncStorage.multiRemove([ACCESS_TOKEN, REFRESH_TOKEN, PERSISTENT, THEME]);
   await clearHomeCache();
   await clearAppCache();
+  clearSiriTokens();
 }
 
 export async function isPersistentSession(): Promise<boolean> {

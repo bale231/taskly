@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Pressable,
   Text,
   View,
   type LayoutChangeEvent,
@@ -82,14 +83,20 @@ export default function MarqueeText({
   // gesture (RNGH e la Response System nativa di RN) non si compongono da
   // soli. Usando anche qui un Gesture.Tap() di RNGH, il tap viene arbitrato
   // correttamente insieme al Pan del genitore invece di essere rubato.
+  //
+  // Montato SOLO quando canScroll è vero: un GestureDetector nativo per
+  // OGNI riga della lista (anche quelle il cui titolo entra tranquillamente
+  // nello spazio disponibile, la maggioranza) è un handler nativo in più da
+  // arbitrare ad ogni gesto/scroll — su liste da 90-100+ elementi il costo
+  // cumulativo faceva degradare progressivamente lo scroll fino al crash.
+  // Un titolo che non eccede non ha comunque nulla da far scorrere al tap.
   const tap = Gesture.Tap().onEnd(() => {
     "worklet";
     runOnJS(handlePress)();
   });
 
-  return (
-    <GestureDetector gesture={tap}>
-      <View onLayout={onContainerLayout} style={{ flex: 1, overflow: "hidden" }}>
+  const content = (
+    <View onLayout={onContainerLayout} style={{ flex: 1, overflow: "hidden" }}>
         {/* Misura sempre la stringa piatta, mai il markup con l'highlight
             annidato sotto (un <Text> figlio con l'highlight rompe la misura
             allo stesso modo). `width: 9999` forza un'unica riga: senza un
@@ -121,7 +128,12 @@ export default function MarqueeText({
           </Text>
         </Animated.View>
       </View>
-    </GestureDetector>
+  );
+
+  return canScroll ? (
+    <GestureDetector gesture={tap}>{content}</GestureDetector>
+  ) : (
+    <Pressable onPress={handlePress}>{content}</Pressable>
   );
 }
 

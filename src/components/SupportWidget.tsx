@@ -21,6 +21,7 @@ import Animated, {
   Easing,
   FadeIn,
   FadeOut,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -78,6 +79,10 @@ export default function SupportWidget() {
   const insets = useSafeAreaInsets();
 
   const [isOpen, setIsOpen] = useState(false);
+  // Il pannello va smontato solo DOPO l'animazione di chiusura, non subito
+  // quando isOpen diventa false: altrimenti sparisce di scatto invece di
+  // sfumare via (lo stesso pattern usato da BubbleModal).
+  const [shouldRenderPanel, setShouldRenderPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ai");
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -103,18 +108,29 @@ export default function SupportWidget() {
 
   useEffect(() => {
     if (isOpen) {
+      setShouldRenderPanel(true);
       panelOpacity.value = withTiming(1, { duration: 200 });
       panelScale.value = withSpring(1, { damping: 16, stiffness: 220, mass: 0.7 });
       setTimeout(() => chatInputRef.current?.focus(), 250);
     } else {
-      panelOpacity.value = withTiming(0, { duration: 150 });
+      panelOpacity.value = withTiming(0, { duration: 150 }, (finished) => {
+        if (finished) runOnJS(setShouldRenderPanel)(false);
+      });
       panelScale.value = withTiming(0.85, { duration: 150 });
     }
   }, [isOpen, panelOpacity, panelScale]);
 
+  // Solo lo scale/posizione sull'Animated.View esterno, che è antenato del
+  // GlassSurface: animarne l'opacità disabiliterebbe il vero Liquid Glass
+  // in modo permanente invece di renderlo solo invisibile (limite noto,
+  // vedi commento su GlassSurface.tsx). Il fade vero è sul contenuto sopra
+  // al vetro, vedi contentFadeStyle.
   const panelStyle = useAnimatedStyle(() => ({
-    opacity: panelOpacity.value,
     transform: [{ scale: panelScale.value }],
+  }));
+
+  const contentFadeStyle = useAnimatedStyle(() => ({
+    opacity: panelOpacity.value,
   }));
 
   const buttonStyle = useAnimatedStyle(() => ({
@@ -217,7 +233,10 @@ export default function SupportWidget() {
             {/* Vetro nativo su iOS 26+ (o BlurView <26), superficie piena
                 tema-aware su Android — stesso pattern del bottone "+" di
                 ListDetailScreen: GlassSurface come sfondo assoluto, tinta
-                colorata sopra con opacità. */}
+                colorata sopra. Denso come i pulsanti di chiamata nativi
+                iOS (verde/rosso), non un velo semitrasparente: la tinta
+                sta su un livello suo, separato dall'icona, che quindi
+                resta a piena opacità invece di sbiadire insieme al colore. */}
             <GlassSurface
               style={StyleSheet.absoluteFill}
               colorScheme={isDark ? "dark" : "light"}
@@ -225,22 +244,15 @@ export default function SupportWidget() {
               intensity={80}
             />
             <View
-              style={{
-                width: 56,
-                height: 56,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#3B82F6",
-                opacity: 0.55,
-              }}
-            >
-              <MessageCircle size={26} color="#FFFFFF" />
-            </View>
+              pointerEvents="none"
+              style={[StyleSheet.absoluteFill, { backgroundColor: "#3B82F6", opacity: 0.92 }]}
+            />
+            <MessageCircle size={26} color="#FFFFFF" />
           </Pressable>
         </Animated.View>
       )}
 
-      {isOpen && (
+      {shouldRenderPanel && (
         <Animated.View
           style={[
             panelStyle,
@@ -265,10 +277,12 @@ export default function SupportWidget() {
         >
           <GlassSurface
             style={StyleSheet.absoluteFill}
+            visible={isOpen}
             colorScheme={isDark ? "dark" : "light"}
             tint={isDark ? "dark" : "light"}
             intensity={95}
           />
+          <Animated.View style={[{ flex: 1 }, contentFadeStyle]}>
 
           {/* Header */}
           <View
@@ -343,6 +357,7 @@ export default function SupportWidget() {
               isDark={isDark}
             />
           )}
+          </Animated.View>
         </Animated.View>
       )}
     </>
