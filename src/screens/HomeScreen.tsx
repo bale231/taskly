@@ -634,24 +634,19 @@ export default function HomeScreen({ navigation }: Props) {
     );
   }
 
-  // Chiude la ricerca al tap in un punto qualsiasi dello schermo, non solo
-  // sulla X: un Pressable esterno che avvolge tutto il contenuto, il cui
-  // onPress scatta solo quando il tocco non è già stato gestito da un
-  // Pressable/gesture più interno (card, bottoni, ecc.) — comportamento di
-  // default in RN, non serve stopPropagation esplicito.
-  const closeSearchOnOutsideTap = searchOpen
-    ? () => {
-        Keyboard.dismiss();
-        setSearchOpen(false);
-        setSearchQuery("");
-      }
-    : undefined;
+  // Il tap fuori dalla barra chiude SOLO la tastiera, non la ricerca:
+  // chiuderla azzererebbe anche il filtro, impedendo di scorrere i risultati
+  // appena trovati. La ricerca si chiude con la X o col bottone lente.
+  // L'onPress del Pressable esterno scatta solo quando il tocco non è già
+  // stato gestito da un Pressable/gesture più interno (card, bottoni) —
+  // comportamento di default in RN, non serve stopPropagation esplicito.
+  const dismissKeyboardOnOutsideTap = searchOpen ? Keyboard.dismiss : undefined;
 
   return (
     <View className="flex-1 bg-gray-100 dark:bg-gray-900">
       <Navbar scrollY={scrollY} />
 
-      <Pressable className="flex-1" onPress={closeSearchOnOutsideTap}>
+      <Pressable className="flex-1" onPress={dismissKeyboardOnOutsideTap}>
       <Animated.ScrollView
         ref={scrollViewRef}
         className="flex-1"
@@ -664,7 +659,7 @@ export default function HomeScreen({ navigation }: Props) {
         scrollEventThrottle={16}
         // Scorrere chiude la ricerca e la tastiera, come nelle app native di
         // sistema: completa il tap fuori gestito dal Pressable qui sopra.
-        onScrollBeginDrag={closeSearchOnOutsideTap}
+        onScrollBeginDrag={dismissKeyboardOnOutsideTap}
         keyboardShouldPersistTaps="handled"
       >
         {searchOpen && (

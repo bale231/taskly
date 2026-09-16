@@ -471,19 +471,14 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     return unsubscribe;
   }, [navigation, searchOpen]);
 
-  const closeSearch = useCallback(() => {
-    Keyboard.dismiss();
-    setSearchOpen(false);
-    setSearchQuery("");
-  }, []);
-
-  // Un tap ovunque fuori dalla barra chiude la ricerca. È `undefined` quando
-  // la ricerca è chiusa, così il Pressable esterno non intercetta nulla nel
-  // caso normale; quando è definito, il suo onPress scatta solo se il tocco
-  // non è già stato gestito da un Pressable/gesture più interno (righe,
-  // bottoni, campo di ricerca stesso) — comportamento di default in RN,
-  // niente stopPropagation esplicito. Stesso pattern già in uso in Home.
-  const closeSearchOnOutsideTap = searchOpen ? closeSearch : undefined;
+  // Un tap fuori dalla barra (o l'inizio di uno scroll) chiude SOLO la
+  // tastiera, non la ricerca: chiudere la ricerca azzererebbe anche il
+  // filtro, rendendo impossibile scorrere i risultati trovati — che è
+  // proprio ciò che si vuole fare dopo aver digitato. La ricerca si chiude
+  // con la X, col bottone lente o col gesto indietro.
+  // È `undefined` quando la ricerca è chiusa, così niente viene intercettato
+  // nel caso normale.
+  const dismissKeyboardOnOutsideTap = searchOpen ? Keyboard.dismiss : undefined;
 
   const listRef = useRef<GHFlatList<Todo>>(null);
   // Soglia in px oltre la quale compare la freccia "torna in cima": circa
@@ -1071,7 +1066,7 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         // Scorrere la lista chiude la ricerca e la tastiera, come nelle app
         // native di sistema. Completa il tap fuori (Pressable sotto): lì si
         // chiude toccando lo sfondo, qui iniziando a scorrere.
-        onScrollBeginDrag={closeSearchOnOutsideTap}
+        onScrollBeginDrag={dismissKeyboardOnOutsideTap}
         keyboardShouldPersistTaps="handled"
         // Ogni riga (RowItem) è React.memo internamente alla libreria e non
         // sa che filteredTodos è cambiato solo perché cambia `data`: senza
@@ -1147,20 +1142,6 @@ export default function ListDetailScreen({ route, navigation }: Props) {
           />
         )}
       />
-
-      {/* Chiude la ricerca al tocco fuori dalla barra. Coperchio trasparente
-          sopra la lista, montato SOLO mentre la ricerca è aperta: fuori da
-          quel caso non esiste, quindi non intercetta nulla di ciò che si fa
-          normalmente (tap su una riga, swipe, drag). Sta sotto lo
-          stickyHeader nell'ordine di render, così la barra di ricerca e i
-          suoi controlli restano toccabili. */}
-      {searchOpen && (
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={closeSearch}
-          accessibilityLabel="Chiudi ricerca"
-        />
-      )}
 
       {stickyHeader}
 
