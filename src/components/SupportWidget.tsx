@@ -1,12 +1,15 @@
 import {
   Bot,
+  History,
   Mail,
+  MessageSquarePlus,
   MessageCircle,
   Send,
   X,
 } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Keyboard,
   Linking,
   Platform,
@@ -20,6 +23,7 @@ import {
 import Animated, {
   Easing,
   FadeIn,
+  interpolateColor,
   FadeOut,
   runOnJS,
   useAnimatedStyle,
@@ -31,7 +35,13 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { sendAIChatMessage, type ConversationMessage } from "../api/aiChat";
+import {
+  fetchConversation,
+  fetchConversations,
+  sendAIChatMessage,
+  type ConversationMessage,
+  type ConversationSummary,
+} from "../api/aiChat";
 import { getAIResponse } from "../data/appKnowledgeBase";
 import { useNetwork } from "../context/NetworkContext";
 import { useTheme } from "../context/ThemeContext";
@@ -45,6 +55,14 @@ interface ChatMessage {
 
 type Tab = "ai" | "contact";
 type RequestType = "question" | "bug" | "suggestion";
+
+/** Messaggio di apertura, ricreato identico quando si avvia una nuova
+ * chat o si torna alle domande rapide. */
+const WELCOME_MESSAGE: ChatMessage = {
+  id: 0,
+  text: "Ciao! 👋 Sono l'assistente di Taskly. Come posso aiutarti?",
+  sender: "bot",
+};
 
 const QUICK_SUGGESTIONS = [
   "Come creo una lista?",
@@ -85,15 +103,16 @@ export default function SupportWidget() {
   const [shouldRenderPanel, setShouldRenderPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ai");
 
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
-    {
-      id: 0,
-      text: "Ciao! 👋 Sono l'assistente di Taskly. Come posso aiutarti?",
-      sender: "bot",
-    },
-  ]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [chatInput, setChatInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  // Conversazione corrente lato server: il server la crea al primo
+  // messaggio e da lì in poi la si continua invece di aprirne una nuova ad
+  // ogni scambio. Resta null per chi non ha fatto accesso.
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   const [requestType, setRequestType] = useState<RequestType>("question");
   const [subject, setSubject] = useState("");
@@ -208,8 +227,12 @@ export default function SupportWidget() {
 
     try {
       if (isOnline) {
-        const response = await sendAIChatMessage(trimmed, history);
+        const response = await sendAIChatMessage(trimmed, history, conversationId);
         appendMessage({ id: messageIdCounter++, text: response.reply, sender: "bot" });
+        // Il server assegna l'id al primo messaggio: da qui in poi lo si
+        // rimanda, così gli scambi successivi finiscono nella stessa
+        // conversazione invece di crearne una per ognuno.
+        if (response.conversation_id) setConversationId(response.conversation_id);
         setIsTyping(false);
         return;
       }
@@ -228,6 +251,54 @@ export default function SupportWidget() {
   const handleQuickSuggestion = (text: string) => {
     setChatInput(text);
     setTimeout(() => handleSendMessage(), 0);
+  };
+
+  /** Riporta la chat allo stato iniziale, con le domande rapide di nuovo
+   * visibili. La conversazione precedente non si perde: resta salvata sul
+   * server e si riapre dalla cronologia. */
+  const handleNewChat = () => {
+    setChatMessages([WELCOME_MESSAGE]);
+    setConversationId(null);
+    setChatInput("");
+    setShowHistory(false);
+  };
+
+  const handleOpenHistory = async () => {
+    setShowHistory(true);
+    setIsLoadingHistory(true);
+    try {
+      setConversations(await fetchConversations());
+    } catch {
+      // Non autenticato o rete assente: si mostra l'elenco vuoto col
+      // relativo messaggio, senza interrompere l'uso del bot.
+      setConversations([]);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleSelectConversation = async (id: number) => {
+    setIsLoadingHistory(true);
+    try {
+      const detail = await fetchConversation(id);
+      setChatMessages([
+        WELCOME_MESSAGE,
+        ...detail.messages.map((m, i) => ({
+          id: i + 1,
+          text: m.content,
+          sender: (m.role === "user" ? "user" : "bot") as ChatMessage["sender"],
+        })),
+      ]);
+      // Gli id ripartono dal fondo della conversazione caricata, così i
+      // messaggi nuovi non collidono con quelli appena ripristinati.
+      messageIdCounter = detail.messages.length + 1;
+      setConversationId(detail.id);
+      setShowHistory(false);
+    } catch {
+      setShowHistory(false);
+    } finally {
+      setIsLoadingHistory(false);
+    }
   };
 
   const handleSendContact = () => {
@@ -370,9 +441,31 @@ export default function SupportWidget() {
                 </Text>
               </View>
             </View>
-            <Pressable onPress={handleClose} hitSlop={8} className="rounded-lg p-1.5">
-              <X size={20} color={isDark ? "#D1D5DB" : "#374151"} />
-            </Pressable>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+              {activeTab === "ai" && (
+                <>
+                  <Pressable
+                    onPress={handleNewChat}
+                    hitSlop={8}
+                    className="rounded-lg p-1.5"
+                    accessibilityLabel="Nuova chat"
+                  >
+                    <MessageSquarePlus size={19} color={isDark ? "#D1D5DB" : "#374151"} />
+                  </Pressable>
+                  <Pressable
+                    onPress={handleOpenHistory}
+                    hitSlop={8}
+                    className="rounded-lg p-1.5"
+                    accessibilityLabel="Cronologia chat"
+                  >
+                    <History size={19} color={isDark ? "#D1D5DB" : "#374151"} />
+                  </Pressable>
+                </>
+              )}
+              <Pressable onPress={handleClose} hitSlop={8} className="rounded-lg p-1.5">
+                <X size={20} color={isDark ? "#D1D5DB" : "#374151"} />
+              </Pressable>
+            </View>
           </View>
 
           {/* Tabs */}
@@ -380,28 +473,48 @@ export default function SupportWidget() {
             <TabSwitcher activeTab={activeTab} onChange={setActiveTab} isDark={isDark} />
           </View>
 
-          {activeTab === "ai" ? (
-            <ChatTab
-              messages={chatMessages}
-              input={chatInput}
-              onInputChange={setChatInput}
-              onSend={handleSendMessage}
-              isTyping={isTyping}
-              showQuickSuggestions={showQuickSuggestions}
-              onQuickSuggestion={handleQuickSuggestion}
-              scrollRef={scrollRef}
-              inputRef={chatInputRef}
-              isDark={isDark}
-            />
-          ) : (
-            <ContactTab
-              requestType={requestType}
-              onRequestTypeChange={setRequestType}
-              subject={subject}
-              onSubjectChange={setSubject}
-              message={contactMessage}
-              onMessageChange={setContactMessage}
-              onSend={handleSendContact}
+          {/* `key` sul tab attivo: senza, React riusa lo stesso albero e il
+              contenuto cambia di scatto mentre il segmented control sta
+              ancora animando. Con la key il vecchio esce e il nuovo entra
+              in dissolvenza, in sincrono con lo scorrimento del riquadro. */}
+          <Animated.View
+            key={activeTab}
+            entering={FadeIn.duration(180)}
+            style={{ flex: 1 }}
+          >
+            {activeTab === "ai" ? (
+              <ChatTab
+                messages={chatMessages}
+                input={chatInput}
+                onInputChange={setChatInput}
+                onSend={handleSendMessage}
+                isTyping={isTyping}
+                showQuickSuggestions={showQuickSuggestions}
+                onQuickSuggestion={handleQuickSuggestion}
+                scrollRef={scrollRef}
+                inputRef={chatInputRef}
+                isDark={isDark}
+              />
+            ) : (
+              <ContactTab
+                requestType={requestType}
+                onRequestTypeChange={setRequestType}
+                subject={subject}
+                onSubjectChange={setSubject}
+                message={contactMessage}
+                onMessageChange={setContactMessage}
+                onSend={handleSendContact}
+                isDark={isDark}
+              />
+            )}
+          </Animated.View>
+
+          {showHistory && (
+            <HistoryPanel
+              conversations={conversations}
+              isLoading={isLoadingHistory}
+              onSelect={handleSelectConversation}
+              onClose={() => setShowHistory(false)}
               isDark={isDark}
             />
           )}
@@ -410,6 +523,117 @@ export default function SupportWidget() {
       )}
     </>
   );
+}
+
+/**
+ * Elenco delle conversazioni salvate, sovrapposto alla chat. Copre l'intero
+ * pannello invece di comparire di lato: lo spazio è poco e una lista
+ * affiancata renderebbe illeggibili sia i titoli sia la chat sotto.
+ */
+function HistoryPanel({
+  conversations,
+  isLoading,
+  onSelect,
+  onClose,
+  isDark,
+}: {
+  conversations: ConversationSummary[];
+  isLoading: boolean;
+  onSelect: (id: number) => void;
+  onClose: () => void;
+  isDark: boolean;
+}) {
+  return (
+    <Animated.View
+      entering={FadeIn.duration(160)}
+      exiting={FadeOut.duration(120)}
+      style={{
+        position: "absolute",
+        top: 64,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: isDark ? "#111827" : "#FFFFFF",
+        zIndex: 20,
+      }}
+    >
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
+        }}
+      >
+        <Text className="text-sm font-semibold text-gray-900 dark:text-white">
+          Chat salvate
+        </Text>
+        <Pressable onPress={onClose} hitSlop={8} className="rounded-lg p-1">
+          <X size={18} color={isDark ? "#D1D5DB" : "#374151"} />
+        </Pressable>
+      </View>
+
+      {isLoading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator color="#3B82F6" />
+        </View>
+      ) : conversations.length === 0 ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <Text className="text-center text-sm text-gray-500 dark:text-gray-400">
+            Nessuna chat salvata. Le conversazioni si salvano automaticamente
+            quando hai effettuato l'accesso.
+          </Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={{ padding: 12 }}>
+          {conversations.map((c) => (
+            <Pressable
+              key={c.id}
+              onPress={() => onSelect(c.id)}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 12,
+                borderRadius: 10,
+                marginBottom: 6,
+                backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                className="text-sm font-medium text-gray-900 dark:text-white"
+              >
+                {c.title || "Chat senza titolo"}
+              </Text>
+              <Text className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                {formatConversationDate(c.updated_at)}
+              </Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+    </Animated.View>
+  );
+}
+
+/** Data relativa e compatta: in una lista di chat "2 ore fa" dice più di
+ * una data completa, e le conversazioni vecchie restano distinguibili. */
+function formatConversationDate(iso: string): string {
+  const date = new Date(iso);
+  const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
+
+  if (diffMin < 1) return "Adesso";
+  if (diffMin < 60) return `${diffMin} min fa`;
+
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH} ${diffH === 1 ? "ora" : "ore"} fa`;
+
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 7) return `${diffD} ${diffD === 1 ? "giorno" : "giorni"} fa`;
+
+  return date.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
 }
 
 /**
@@ -436,6 +660,21 @@ function TabSwitcher({
 
   const thumbStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: progress.value * halfWidth }],
+  }));
+
+  // Il colore del testo segue la stessa progress del riquadro, invece di
+  // cambiare di scatto al tap: altrimenti per tutta la durata dello
+  // scorrimento si vedeva testo bianco su fondo trasparente (il riquadro
+  // blu non era ancora arrivato sotto) e testo grigio su fondo blu
+  // dall'altra parte.
+  const inactive = isDark ? "#9CA3AF" : "#6B7280";
+
+  const aiTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], ["#FFFFFF", inactive]),
+  }));
+
+  const contactTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(progress.value, [0, 1], [inactive, "#FFFFFF"]),
   }));
 
   const trackBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)";
@@ -471,29 +710,17 @@ function TabSwitcher({
         onLayout={(e) => setHalfWidth(e.nativeEvent.layout.width)}
         style={{ flex: 1, alignItems: "center", paddingVertical: 8 }}
       >
-        <Text
-          style={{
-            fontSize: 13,
-            fontWeight: "600",
-            color: activeTab === "ai" ? "#FFFFFF" : isDark ? "#9CA3AF" : "#6B7280",
-          }}
-        >
+        <Animated.Text style={[{ fontSize: 13, fontWeight: "600" }, aiTextStyle]}>
           Assistente AI
-        </Text>
+        </Animated.Text>
       </Pressable>
       <Pressable
         onPress={() => onChange("contact")}
         style={{ flex: 1, alignItems: "center", paddingVertical: 8 }}
       >
-        <Text
-          style={{
-            fontSize: 13,
-            fontWeight: "600",
-            color: activeTab === "contact" ? "#FFFFFF" : isDark ? "#9CA3AF" : "#6B7280",
-          }}
-        >
+        <Animated.Text style={[{ fontSize: 13, fontWeight: "600" }, contactTextStyle]}>
           Contattaci
-        </Text>
+        </Animated.Text>
       </Pressable>
     </View>
   );
