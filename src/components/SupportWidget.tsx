@@ -242,8 +242,12 @@ export default function SupportWidget() {
   return (
     <>
       {!isOpen && (
+        // Niente `entering={FadeIn}` qui: anima l'opacità di questo
+        // contenitore, che è antenato del GlassSurface sotto, e ciò SPEGNE
+        // il vetro nativo invece di limitarsi a renderlo trasparente —
+        // restava solo la tinta blu piatta. Il bottone compare comunque in
+        // modo morbido grazie allo scale di buttonStyle.
         <Animated.View
-          entering={FadeIn.duration(220)}
           style={[
             buttonStyle,
             {
@@ -272,12 +276,12 @@ export default function SupportWidget() {
             }}
           >
             {/* Vetro nativo su iOS 26+ (o BlurView <26), superficie piena
-                tema-aware su Android — stesso pattern del bottone "+" di
-                ListDetailScreen: GlassSurface come sfondo assoluto, tinta
-                colorata sopra. Denso come i pulsanti di chiamata nativi
-                iOS (verde/rosso), non un velo semitrasparente: la tinta
-                sta su un livello suo, separato dall'icona, che quindi
-                resta a piena opacità invece di sbiadire insieme al colore. */}
+                tema-aware su Android — stesso pattern dei bottoni flottanti
+                di ListDetailScreen: GlassSurface come sfondo assoluto, tinta
+                colorata sopra su un livello suo (così l'icona resta a piena
+                opacità invece di sbiadire insieme al colore). L'opacità
+                della tinta è la stessa degli altri bottoni: più densa e il
+                vetro sotto sparisce, rendendolo un cerchio pieno. */}
             <GlassSurface
               style={StyleSheet.absoluteFill}
               colorScheme={isDark ? "dark" : "light"}
@@ -286,7 +290,7 @@ export default function SupportWidget() {
             />
             <View
               pointerEvents="none"
-              style={[StyleSheet.absoluteFill, { backgroundColor: "#3B82F6", opacity: 0.92 }]}
+              style={[StyleSheet.absoluteFill, { backgroundColor: "#3B82F6", opacity: 0.55 }]}
             />
             <MessageCircle size={26} color="#FFFFFF" />
           </Pressable>
