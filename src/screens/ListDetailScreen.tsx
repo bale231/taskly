@@ -3,6 +3,7 @@ import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import {
   ArrowLeft,
   ArrowRightLeft,
+  ArrowUp,
   CheckSquare,
   GripVertical,
   ListFilter,
@@ -26,7 +27,15 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 import DraggableFlatList from "react-native-draggable-flatlist";
-import Animated, { FadeIn, FadeInDown, FadeOut, FadeOutUp } from "react-native-reanimated";
+import type { FlatList as GHFlatList } from "react-native-gesture-handler";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  FadeOutUp,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   fetchAllLists,
@@ -101,6 +110,17 @@ const IMMEDIATE_RENDER_THRESHOLD = 40;
  * tappandoci sopra, e il testo completo resta comunque visibile aprendo la
  * todo in modifica. */
 const MARQUEE_ROW_LIMIT = 15;
+
+/** Quanto bisogna aver scrollato prima che compaia la freccia "torna in
+ * cima": circa due schermate, così non spunta al primo movimento. Sparisce
+ * a metà soglia (isteresi), per non lampeggiare oscillando attorno al
+ * valore esatto. */
+const SCROLL_TOP_THRESHOLD = 600;
+
+/** Altezza dei bottoni tondi della barra flottante (icona 22 + padding 16
+ * sopra e sotto): serve a posizionare la freccia "torna in cima" esattamente
+ * sopra di essi, senza misurarne il layout a runtime. */
+const FLOATING_BUTTON_SIZE = 54;
 
 function effectiveSortOf(data: ListDetailsResponse): TodoSortOption {
   return data.sort_order === "alphabetical" || data.sort_order === "completed"
@@ -451,6 +471,25 @@ export default function ListDetailScreen({ route, navigation }: Props) {
     return unsubscribe;
   }, [navigation, searchOpen]);
 
+  const closeSearch = useCallback(() => {
+    Keyboard.dismiss();
+    setSearchOpen(false);
+    setSearchQuery("");
+  }, []);
+
+  // Un tap ovunque fuori dalla barra chiude la ricerca. È `undefined` quando
+  // la ricerca è chiusa, così il Pressable esterno non intercetta nulla nel
+  // caso normale; quando è definito, il suo onPress scatta solo se il tocco
+  // non è già stato gestito da un Pressable/gesture più interno (righe,
+  // bottoni, campo di ricerca stesso) — comportamento di default in RN,
+  // niente stopPropagation esplicito. Stesso pattern già in uso in Home.
+  const closeSearchOnOutsideTap = searchOpen ? closeSearch : undefined;
+
+  const listRef = useRef<GHFlatList<Todo>>(null);
+  // Soglia in px oltre la quale compare la freccia "torna in cima": circa
+  // due schermate di scroll, così non spunta al primo movimento.
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
   // Modale nuova/edit todo
   const [showQuantityModal, setShowQuantityModal] = useState(false);
   const [title, setTitle] = useState("");
@@ -798,6 +837,25 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   // `data` è il nuovo array già riordinato da DraggableFlatList (calcolato
   // dal riordino live durante il drag): basta ri-derivare _originalIndex e
   // persistere, niente più splice manuale su from/to.
+  // Solo un confronto con la soglia: lo stato cambia due volte in tutto lo
+  // scroll (quando la si supera e quando si torna sopra), non ad ogni
+  // evento, così il re-render non si ripete mentre si scorre.
+  const handleScrollOffset = useCallback((y: number) => {
+    setShowScrollTop((prev) => (prev ? y > SCROLL_TOP_THRESHOLD / 2 : y > SCROLL_TOP_THRESHOLD));
+  }, []);
+
+  const scrollToTop = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
+
+  // Opacità della tinta+icona della freccia: applicata SOLO a questo layer,
+  // che sta sopra il vetro, mai al contenitore che lo racchiude (vedi il
+  // commento accanto al JSX). A riposo resta 0.55 come gli altri bottoni
+  // flottanti, così quando è visibile ha esattamente il loro stesso aspetto.
+  const scrollTopContentStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(showScrollTop ? 0.55 : 0, { duration: showScrollTop ? 200 : 150 }),
+  }));
+
   const handleReorder = (data: Todo[]) => {
     const withIndex = data.map((t, i) => ({ ...t, _originalIndex: i }));
     setTodos(withIndex);
@@ -1000,9 +1058,21 @@ export default function ListDetailScreen({ route, navigation }: Props) {
   return (
     <View className={`flex-1 ${HEADER_BG[listColor] ?? HEADER_BG.blue}`}>
       <DraggableFlatList
+        ref={listRef}
         data={isLoading ? [] : filteredTodos}
         keyExtractor={(todo) => String(todo.id)}
         onDragEnd={({ data }) => handleReorder(data)}
+        // `onScrollOffsetChange`, non `onScroll`: DraggableFlatList registra
+        // internamente il proprio useAnimatedScrollHandler (gli serve per il
+        // drag), che sostituisce l'onScroll passato come prop — quello non
+        // verrebbe mai chiamato. Questa callback della libreria riceve
+        // direttamente l'offset verticale.
+        onScrollOffsetChange={handleScrollOffset}
+        // Scorrere la lista chiude la ricerca e la tastiera, come nelle app
+        // native di sistema. Completa il tap fuori (Pressable sotto): lì si
+        // chiude toccando lo sfondo, qui iniziando a scorrere.
+        onScrollBeginDrag={closeSearchOnOutsideTap}
+        keyboardShouldPersistTaps="handled"
         // Ogni riga (RowItem) è React.memo internamente alla libreria e non
         // sa che filteredTodos è cambiato solo perché cambia `data`: senza
         // extraData, cancellare una lettera nella ricerca lasciava la lista
@@ -1078,7 +1148,59 @@ export default function ListDetailScreen({ route, navigation }: Props) {
         )}
       />
 
+      {/* Chiude la ricerca al tocco fuori dalla barra. Coperchio trasparente
+          sopra la lista, montato SOLO mentre la ricerca è aperta: fuori da
+          quel caso non esiste, quindi non intercetta nulla di ciò che si fa
+          normalmente (tap su una riga, swipe, drag). Sta sotto lo
+          stickyHeader nell'ordine di render, così la barra di ricerca e i
+          suoi controlli restano toccabili. */}
+      {searchOpen && (
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={closeSearch}
+          accessibilityLabel="Chiudi ricerca"
+        />
+      )}
+
       {stickyHeader}
+
+      {/* Freccia "torna in cima": fluttua sopra il bottone Ordina, allineata
+          al suo bordo destro. Vetro e tinta identici agli altri bottoni
+          flottanti — il rounded-full con overflow-hidden sul contenitore è
+          ciò che dà la forma tonda al vetro, che di suo è un rettangolo in
+          absoluteFill. */}
+      {/* Sempre montata, mai dentro un Animated.View che ne anima l'opacità:
+          GlassView è una view nativa e l'opacità animata su un suo antenato
+          spegne l'effetto Liquid Glass invece di renderlo solo trasparente
+          (stessa trappola già incontrata sul pannello del chatbot). La
+          comparsa è affidata a `visible` sul vetro — che il componente anima
+          da sé — e al fade del solo contenuto sopra, mentre pointerEvents
+          impedisce di toccarla quando è invisibile. */}
+      <View
+        pointerEvents={showScrollTop ? "auto" : "none"}
+        className="absolute right-6"
+        style={{ bottom: insets.bottom + 24 + FLOATING_BUTTON_SIZE + 12 }}
+      >
+        <Pressable onPress={scrollToTop} className="rounded-full shadow-lg">
+          <View className="overflow-hidden rounded-full">
+            <GlassSurface
+              style={StyleSheet.absoluteFill}
+              colorScheme={isDark ? "dark" : "light"}
+              tint={isDark ? "dark" : "light"}
+              intensity={80}
+              visible={showScrollTop}
+            />
+            <Animated.View
+              style={[
+                { padding: 16, backgroundColor: "#374151" },
+                scrollTopContentStyle,
+              ]}
+            >
+              <ArrowUp size={22} color="#FFFFFF" />
+            </Animated.View>
+          </View>
+        </Pressable>
+      </View>
 
       {/* Barra azioni flottante in basso: vero vetro puro (mai tintColor sul
           glass stesso: lo appiattisce, perde la distorsione) con una tinta

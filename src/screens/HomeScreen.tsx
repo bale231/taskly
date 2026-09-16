@@ -641,6 +641,7 @@ export default function HomeScreen({ navigation }: Props) {
   // default in RN, non serve stopPropagation esplicito.
   const closeSearchOnOutsideTap = searchOpen
     ? () => {
+        Keyboard.dismiss();
         setSearchOpen(false);
         setSearchQuery("");
       }
@@ -661,6 +662,10 @@ export default function HomeScreen({ navigation }: Props) {
         }}
         onScroll={onScroll}
         scrollEventThrottle={16}
+        // Scorrere chiude la ricerca e la tastiera, come nelle app native di
+        // sistema: completa il tap fuori gestito dal Pressable qui sopra.
+        onScrollBeginDrag={closeSearchOnOutsideTap}
+        keyboardShouldPersistTaps="handled"
       >
         {searchOpen && (
           <Animated.View
