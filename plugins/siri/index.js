@@ -41,8 +41,11 @@ const withExtensionFiles = (config) =>
         }
       }
 
-      // L'estensione dichiara di essere un App Intents extension point:
-      // senza questo Siri non la carica affatto. Le chiavi di bundle
+      // Un'estensione App Intents va costruita come ExtensionKit, non come
+      // NSExtension: Apple rifiuta il binario con ITMS-91179 se usa la
+      // chiave NSExtension o se finisce in PlugIns/ invece che in
+      // Extensions/. Da qui EXAppExtensionAttributes e la destinazione di
+      // copia impostata più sotto. Le chiavi di bundle
       // (identifier, nome, versioni) vanno dichiarate esplicitamente con i
       // riferimenti alle build settings: Xcode non le inietta da sé in un
       // Info.plist scritto a mano, e senza CFBundleIdentifier la build
@@ -72,9 +75,9 @@ const withExtensionFiles = (config) =>
 \t<string>$(MARKETING_VERSION)</string>
 \t<key>CFBundleVersion</key>
 \t<string>$(CURRENT_PROJECT_VERSION)</string>
-\t<key>NSExtension</key>
+\t<key>EXAppExtensionAttributes</key>
 \t<dict>
-\t\t<key>NSExtensionPointIdentifier</key>
+\t\t<key>EXExtensionPointIdentifier</key>
 \t\t<string>com.apple.appintents-extension</string>
 \t</dict>
 </dict>
@@ -117,6 +120,13 @@ const withExtensionTarget = (config) =>
     const marketingVersion = cfg.version;
 
     const target = proj.addTarget(TARGET_NAME, "app_extension", TARGET_NAME, bundleId);
+
+    // La libreria xcode conosce solo il vecchio tipo "app-extension"
+    // (NSExtension, copiata in PlugIns/). Un'estensione App Intents deve
+    // invece essere un ExtensionKit extension in Extensions/, altrimenti
+    // App Store Connect rifiuta il binario con ITMS-91179 — quindi il
+    // productType si corregge qui a mano.
+    target.pbxNativeTarget.productType = '"com.apple.product-type.extensionkit-extension"';
 
     proj.addBuildPhase([], "PBXSourcesBuildPhase", "Sources", target.uuid);
     proj.addBuildPhase([], "PBXResourcesBuildPhase", "Resources", target.uuid);
@@ -198,6 +208,24 @@ const withExtensionTarget = (config) =>
     objects.PBXTargetDependency = objects.PBXTargetDependency || {};
     objects.PBXContainerItemProxy = objects.PBXContainerItemProxy || {};
     proj.addTargetDependency(appTarget.uuid, [target.uuid]);
+
+    // La fase creata da addTarget copia in PlugIns/ (dstSubfolderSpec 13),
+    // dove vanno le vecchie NSExtension. Un ExtensionKit extension deve
+    // stare in Extensions/ (spec 16): senza questa correzione il binario
+    // viene rifiutato da App Store Connect con ITMS-91179.
+    const copyPhases = objects.PBXCopyFilesBuildPhase || {};
+    for (const key of Object.keys(copyPhases)) {
+      const phase = copyPhases[key];
+      if (!phase || typeof phase !== "object" || !phase.files) continue;
+      const copiesAppex = phase.files.some((f) => f.comment && f.comment.includes(`${TARGET_NAME}.appex`));
+      if (copiesAppex) {
+        // spec 16 = products directory; da solo copierebbe nella radice del
+        // bundle, quindi il percorso vero lo dà dstPath.
+        phase.dstSubfolderSpec = 16;
+        phase.dstPath = '"$(EXTENSIONS_FOLDER_PATH)"';
+        phase.name = '"Embed ExtensionKit Extensions"';
+      }
+    }
 
     return cfg;
   });
