@@ -7,7 +7,9 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { proactiveTokenRefresh } from "./src/api/auth";
 import AnimatedAlert from "./src/components/AnimatedAlert";
-import AnimatedSplashScreen from "./src/components/AnimatedSplashScreen";
+import AnimatedSplashScreen, {
+  SPLASH_ANIMATION_MS,
+} from "./src/components/AnimatedSplashScreen";
 import NotificationPopup from "./src/components/NotificationPopup";
 import TourOverlay from "./src/components/TourOverlay";
 import { AlertProvider, useAlert } from "./src/context/AlertContext";
@@ -26,8 +28,8 @@ export default function App() {
     const bootstrap = async () => {
       // Ordine importante: prima si scartano i token di una sessione
       // non persistente, poi si tenta il refresh proattivo su ciò che resta.
-      // Il delay minimo evita che lo splash animato lampeggi per una
-      // frazione di secondo quando il bootstrap è già istantaneo.
+      // L'attesa in parallelo lascia completare un giro dell'animazione del
+      // logo invece di troncarla a metà quando il bootstrap è già finito.
       //
       // Il bootstrap BLOCCANTE si ferma all'autenticazione: è l'unica cosa
       // che serve davvero per decidere quale schermata mostrare.
@@ -35,7 +37,7 @@ export default function App() {
         clearSessionTokensIfNeeded()
           .then(() => proactiveTokenRefresh())
           .catch(() => {}),
-        new Promise((resolve) => setTimeout(resolve, 800)),
+        new Promise((resolve) => setTimeout(resolve, SPLASH_ANIMATION_MS)),
       ]);
       setBootstrapped(true);
 

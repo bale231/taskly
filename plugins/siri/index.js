@@ -72,9 +72,9 @@ const withExtensionFiles = (config) =>
 \t<string>$(MARKETING_VERSION)</string>
 \t<key>CFBundleVersion</key>
 \t<string>$(CURRENT_PROJECT_VERSION)</string>
-\t<key>EXAppExtensionAttributes</key>
+\t<key>NSExtension</key>
 \t<dict>
-\t\t<key>EXExtensionPointIdentifier</key>
+\t\t<key>NSExtensionPointIdentifier</key>
 \t\t<string>com.apple.appintents-extension</string>
 \t</dict>
 </dict>
@@ -122,16 +122,22 @@ const withExtensionTarget = (config) =>
     proj.addBuildPhase([], "PBXResourcesBuildPhase", "Resources", target.uuid);
     proj.addBuildPhase([], "PBXFrameworksBuildPhase", "Frameworks", target.uuid);
 
-    const group = proj.addPbxGroup(
-      [
-        ...fs
-          .readdirSync(path.join(cfg.modRequest.platformProjectRoot, TARGET_NAME))
-          .filter((f) => f.endsWith(".swift")),
-        "Info.plist",
-      ],
-      TARGET_NAME,
-      TARGET_NAME
-    );
+    // I nomi si leggono da plugins/siri/swift/ (sempre presente) e non da
+    // ios/<target>/: withXcodeProject gira PRIMA del withDangerousMod che
+    // copia i file, quindi quella cartella qui non esiste ancora e il
+    // readdirSync tornava vuoto — il target finiva senza alcun sorgente e
+    // l'.appex veniva prodotto privo di eseguibile.
+    const swiftFiles = fs
+      .readdirSync(path.join(cfg.modRequest.projectRoot, "plugins", "siri", "swift"))
+      .filter((f) => f.endsWith(".swift"));
+
+    // Il gruppo nasce con il solo Info.plist: i .swift li aggiunge
+    // addSourceFile qui sotto, che è anche ciò che li aggancia alla build
+    // phase. Elencarli già qui faceva restituire `false` ad addFile (file
+    // duplicato nel gruppo), e addSourceFile usciva senza agganciare nulla:
+    // il target compilava zero sorgenti e produceva un .appex senza
+    // eseguibile, che iOS rifiuta di installare.
+    const group = proj.addPbxGroup(["Info.plist"], TARGET_NAME, TARGET_NAME);
 
     // Appende il gruppo alla radice del progetto, così i file compaiono in
     // Xcode invece di esistere solo su disco.
@@ -147,9 +153,7 @@ const withExtensionTarget = (config) =>
     // già `path: TasklyIntents`, e anteporlo di nuovo produce percorsi
     // doppi (TasklyIntents/TasklyIntents/File.swift) che xcodebuild non
     // trova.
-    for (const file of fs
-      .readdirSync(path.join(cfg.modRequest.platformProjectRoot, TARGET_NAME))
-      .filter((f) => f.endsWith(".swift"))) {
+    for (const file of swiftFiles) {
       proj.addSourceFile(file, { target: target.uuid }, group.uuid);
     }
 
