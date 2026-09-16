@@ -31,6 +31,14 @@ enum TasklyAPI {
         return try JSONDecoder().decode(TodoListPayload.self, from: data)
     }
 
+    /// Inverte lo stato completata/da fare di una todo. Stesso endpoint di
+    /// toggleTodo lato RN: è il server a fare lo switch, qui non si manda
+    /// alcuno stato desiderato.
+    static func toggleTodo(todoId: Int) async throws {
+        let url = URL(string: "\(SharedStore.apiBaseURL)/todos/\(todoId)/toggle/")!
+        _ = try await send(url: url, method: "PATCH", body: nil)
+    }
+
     /// Todo di una lista, per la lettura a voce. Il dettaglio lista è lo
     /// stesso endpoint usato da fetchListDetails lato RN.
     static func fetchTodos(listId: Int) async throws -> [TodoPayload] {

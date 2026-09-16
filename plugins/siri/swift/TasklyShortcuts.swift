@@ -37,6 +37,27 @@ struct TasklyShortcuts: AppShortcutsProvider {
         )
 
         AppShortcut(
+            intent: CompleteTodoIntent(),
+            phrases: [
+                "Completa una ToDo in \(.applicationName)",
+                "Segna una ToDo come fatta in \(.applicationName)",
+                "Ho fatto una ToDo in \(.applicationName)"
+            ],
+            shortTitle: "Completa ToDo",
+            systemImageName: "checkmark.circle"
+        )
+
+        AppShortcut(
+            intent: ReopenTodoIntent(),
+            phrases: [
+                "Riapri una ToDo in \(.applicationName)",
+                "Rimetti una ToDo da fare in \(.applicationName)"
+            ],
+            shortTitle: "Riapri ToDo",
+            systemImageName: "arrow.uturn.backward.circle"
+        )
+
+        AppShortcut(
             intent: ReadTodosIntent(),
             phrases: [
                 "Leggi le ToDo di \(.applicationName)",
