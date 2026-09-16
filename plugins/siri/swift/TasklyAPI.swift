@@ -39,6 +39,17 @@ enum TasklyAPI {
         _ = try await send(url: url, method: "PATCH", body: nil)
     }
 
+    static func deleteTodo(todoId: Int) async throws {
+        let url = URL(string: "\(SharedStore.apiBaseURL)/todos/\(todoId)/")!
+        _ = try await send(url: url, method: "DELETE", body: nil)
+    }
+
+    /// Elimina la lista e, con essa, tutte le sue todo.
+    static func deleteList(listId: Int) async throws {
+        let url = URL(string: "\(SharedStore.apiBaseURL)/lists/\(listId)/")!
+        _ = try await send(url: url, method: "DELETE", body: nil)
+    }
+
     /// Todo di una lista, per la lettura a voce. Il dettaglio lista è lo
     /// stesso endpoint usato da fetchListDetails lato RN.
     static func fetchTodos(listId: Int) async throws -> [TodoPayload] {

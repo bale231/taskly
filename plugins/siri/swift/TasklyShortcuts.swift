@@ -58,6 +58,26 @@ struct TasklyShortcuts: AppShortcutsProvider {
         )
 
         AppShortcut(
+            intent: DeleteTodoIntent(),
+            phrases: [
+                "Elimina una ToDo in \(.applicationName)",
+                "Cancella una ToDo in \(.applicationName)"
+            ],
+            shortTitle: "Elimina ToDo",
+            systemImageName: "trash"
+        )
+
+        AppShortcut(
+            intent: DeleteListIntent(),
+            phrases: [
+                "Elimina una lista in \(.applicationName)",
+                "Cancella una lista in \(.applicationName)"
+            ],
+            shortTitle: "Elimina lista",
+            systemImageName: "folder.badge.minus"
+        )
+
+        AppShortcut(
             intent: ReadTodosIntent(),
             phrases: [
                 "Leggi le ToDo di \(.applicationName)",
