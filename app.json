@@ -57,7 +57,24 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "3fedb040-d1da-41a2-ab2d-b14f9deed9aa"
+        "projectId": "3fedb040-d1da-41a2-ab2d-b14f9deed9aa",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "TasklyIntents",
+                  "bundleIdentifier": "com.bale231.taskly.TasklyIntents",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.bale231.taskly"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     }
   }
